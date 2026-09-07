@@ -1,0 +1,3140 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pac-Man · Agentes de Reflejo vs. Basados en Modelo</title>
+<style>
+  :root{
+    --bg: #0b0f1a;
+    --bg-panel: #10182c;
+    --wall: #2b3a67;
+    --wall-edge: #3f9dff;
+    --dot: #f2f0e6;
+    --pac: #ffd23f;
+    --ghost-reflex: #ff3b5c;
+    --ghost-model: #8e6bff;
+    --ghost1: #ff3b5c;
+    --ghost2: #ff9f3f;
+    --ghost3: #b455ff;
+    --accent: #28e0e0;
+    --text: #e9ecf5;
+    --text-dim: #8a93b8;
+    --ok: #4ade80;
+    --agent-goal: #4ade80;
+    --agent-utility: #ff6ec7;
+  }
+  *{ box-sizing: border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    background:
+      radial-gradient(circle at 20% -10%, #14203f 0%, transparent 55%),
+      radial-gradient(circle at 100% 10%, #1a1030 0%, transparent 45%),
+      var(--bg);
+    color: var(--text);
+    font-family: "Courier New", "Consolas", monospace;
+    padding: 16px 16px 20px;
+  }
+  .app{ max-width: 1080px; margin: 0 auto; }
+  header{ text-align:center; margin-bottom: 12px; }
+  header h1{
+    margin:0;
+    font-size: clamp(19px, 3.2vw, 28px);
+    letter-spacing: 3px;
+    color: var(--pac);
+    text-shadow: 0 0 12px rgba(255,210,63,.55), 0 0 2px #fff;
+  }
+  header p{ color: var(--text-dim); margin: 4px 0 0; font-size: 12px; letter-spacing: .5px; }
+
+  .layout{
+    display:flex;
+    gap: 18px;
+    align-items:flex-start;
+    flex-wrap: wrap;
+    justify-content:center;
+  }
+  .game-column{ flex: 0 0 440px; width: 440px; max-width: 82vw; }
+
+  .hud{
+    display:flex; justify-content:space-between; align-items:center;
+    margin-bottom:8px; font-size: 13px; letter-spacing:1px;
+  }
+  .hud .score{ color: var(--pac); font-weight:bold; }
+  .hud .dots-left{ color: var(--text-dim); }
+
+  .powerbar{ display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap; }
+  .power-chip{
+    font-size:10.5px; letter-spacing:.3px; padding:4px 8px; border-radius:5px;
+    border:1px solid #26314f; background:rgba(255,255,255,.02); color: var(--text-dim);
+    transition: border-color .15s ease, background .15s ease, color .15s ease;
+  }
+  .power-chip b{ color: inherit; }
+  .power-chip.ready{ border-color: var(--ok); color: var(--ok); background: rgba(74,222,128,.08); }
+  .power-chip.active{ border-color: var(--accent); color: var(--accent); background: rgba(40,224,224,.1); }
+  .power-chip.cooling{ border-color:#26314f; color: var(--text-dim); }
+
+  .canvas-wrap{ position:relative; width:100%; }
+  canvas{
+    width:100%; height:auto; display:block; background: var(--bg);
+    border: 2px solid var(--wall-edge);
+    border-radius: 8px;
+    box-shadow: 0 0 24px rgba(63,157,255,.25), inset 0 0 40px rgba(0,0,0,.6), 0 10px 30px rgba(0,0,0,.45);
+  }
+  .scanlines{
+    position:absolute; inset:0; pointer-events:none; border-radius:6px;
+    background: repeating-linear-gradient(0deg, rgba(255,255,255,.03) 0px, rgba(255,255,255,.03) 1px, transparent 1px, transparent 3px);
+  }
+  .overlay{
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; text-align:center;
+    background: rgba(6,9,18,.86); border-radius:6px; padding: 20px;
+    transition: opacity .15s ease;
+  }
+  .overlay.hidden{ display:none; }
+  .overlay h2{ color: var(--pac); letter-spacing:2px; margin: 0 0 10px; font-size: clamp(16px,3vw,22px); }
+  .overlay p{ color: var(--text-dim); font-size: 12.5px; max-width: 420px; line-height:1.6; margin: 4px 0; }
+
+  .controls-row{
+    display:flex; flex-wrap:wrap; gap:14px; align-items:center; justify-content:space-between;
+    margin-top: 12px;
+  }
+  .mode-selector{ display:flex; gap: 6px; flex-wrap:wrap; justify-content:center; }
+  .mode-selector label{
+    display:flex; align-items:center; gap:5px; font-size:10.5px; letter-spacing:.2px;
+    color: var(--text-dim); cursor:pointer; padding: 6px 8px; border:1px solid #26314f; border-radius:6px;
+    background: rgba(255,255,255,.02); transition: border-color .15s ease, background .15s ease, color .15s ease;
+  }
+  .mode-selector label:hover{ border-color:#3a4a78; color: var(--text); }
+  .mode-selector input:checked + span{ color: var(--text); }
+  .mode-selector label:has(input:checked){ border-color: var(--accent); color: var(--text); background: rgba(40,224,224,.08); }
+  .mode-selector input{ accent-color: var(--accent); }
+
+  button{
+    font-family: inherit; font-size: 12px; letter-spacing: 1px; text-transform: uppercase;
+    background: var(--pac); color: #0b0f1a; border: none; padding: 10px 16px;
+    border-radius: 5px; cursor:pointer; font-weight: bold;
+    transition: filter .15s ease, transform .1s ease, box-shadow .15s ease;
+    box-shadow: 0 2px 0 rgba(0,0,0,.25);
+  }
+  button.secondary{ background: transparent; color: var(--accent); border: 1px solid var(--accent); box-shadow:none; }
+  button:hover{ filter: brightness(1.14); transform: translateY(-1px); }
+  button:active{ transform: translateY(0); }
+  button:disabled{ opacity:.5; cursor:not-allowed; transform:none; }
+
+  .legend{ display:flex; gap:16px; flex-wrap:wrap; font-size:11.5px; color:var(--text-dim); margin-top:10px; }
+  .legend span{ display:inline-flex; align-items:center; gap:6px; }
+  .swatch{ width:10px; height:10px; border-radius:50%; display:inline-block; }
+  .speed-note{ font-size:11px; color:var(--text-dim); margin: 8px 0 0; }
+
+  .speed-row{
+    display:flex; align-items:center; gap:10px; margin-top: 10px;
+    font-size:11px; color: var(--text-dim); letter-spacing:.3px;
+  }
+  .speed-row b{ color: var(--accent); min-width: 34px; display:inline-block; text-align:right; }
+  .speed-row input[type="range"]{
+    flex: 1 1 auto; accent-color: var(--accent); cursor:pointer;
+  }
+
+  .tab-intro{ font-size:11px; color: var(--text-dim); line-height:1.6; margin: 0 0 10px; }
+  .peas-grid{ display:grid; grid-template-columns: 1fr; gap:8px; }
+  .peas-grid details{ background:#0b0f1a; border:1px solid #1c2745; border-radius:4px; padding:8px 10px; }
+  .peas-grid summary{ cursor:pointer; font-size:12px; letter-spacing:.5px; color: var(--accent); }
+  .peas-grid p{ font-size:11.5px; color: var(--text-dim); line-height:1.6; margin: 8px 0 0; }
+  .peas-grid code{ color: var(--ok); }
+
+  aside.status-panel{
+    order: -1; /* estadísticas a la izquierda, el juego a la derecha */
+    flex: 1 1 320px; max-width: 360px; min-width: 280px;
+    background: var(--bg-panel); border: 1px solid #23305a; border-left: 3px solid var(--accent);
+    border-radius: 8px; padding: 16px; font-size: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.35);
+  }
+  aside.status-panel > h2{
+    font-size: 13px; letter-spacing:2px; color: var(--accent); margin: 0 0 12px;
+    text-transform: uppercase;
+  }
+
+  .live-summary{
+    display:flex; flex-direction:column; gap:5px; background:#0b0f1a; border:1px solid #1c2745;
+    border-radius:6px; padding:10px 12px; margin-bottom:14px;
+  }
+  .live-row{ display:flex; justify-content:space-between; gap:10px; font-size:11.5px; }
+  .live-row span:first-child{ color: var(--text-dim); letter-spacing:.5px; text-transform:uppercase; font-size:10px; }
+  .live-row b{ color: var(--pac); text-align:right; }
+  .live-regla{ font-size:11px; color: var(--text-dim); line-height:1.5; border-top:1px dashed #1c2745; padding-top:6px; margin-top:2px; }
+
+  .tabs{ display:flex; gap:4px; flex-wrap:wrap; margin-bottom:12px; border-bottom:1px solid #1c2745; padding-bottom:8px; }
+  .tab-btn{
+    font-family:inherit; font-size:10.5px; letter-spacing:.6px; text-transform:uppercase; font-weight:bold;
+    background:transparent; color:var(--text-dim); border:1px solid #23305a; border-radius:5px;
+    padding:6px 9px; cursor:pointer; box-shadow:none; transition: all .15s ease;
+  }
+  .tab-btn:hover{ color: var(--text); border-color:#3a4a78; transform:none; filter:none; }
+  .tab-btn.active{ background: var(--accent); color:#06121a; border-color: var(--accent); }
+
+  .tab-panel{ animation: fadein .12s ease; }
+  .tab-panel[hidden]{ display:none; }
+  @keyframes fadein{ from{ opacity:0; transform: translateY(2px); } to{ opacity:1; transform:none; } }
+
+  .status-block{ margin-bottom: 14px; }
+  .status-block:last-child{ margin-bottom:0; }
+  .status-block h3{
+    font-size: 10.5px; letter-spacing: 1.5px; color: var(--text-dim); text-transform:uppercase; margin:0 0 6px;
+  }
+  .status-block pre{
+    background:#0b0f1a; border:1px solid #1c2745; border-radius:4px; padding:8px;
+    margin:0; font-size: 11px; line-height:1.5; white-space:pre-wrap; word-break:break-word;
+    color: var(--ok); max-height: 160px; overflow:auto;
+  }
+  .status-block pre.mapa{
+    color: #ffd76b; letter-spacing: 2px; line-height:1.3; white-space:pre; border-color:#3a2f14;
+  }
+  #experimentResults{ font-size:11.5px; color: var(--text-dim); }
+  table.results{ width:100%; border-collapse: collapse; margin-top:6px; table-layout:fixed; }
+  table.results th, table.results td{
+    border: 1px solid #23305a; padding: 4px 2px; text-align:center; font-size: 9.5px;
+  }
+  table.results td:first-child, table.results th:first-child{ text-align:left; font-size:9px; width:34%; }
+  table.results th{ font-weight:normal; letter-spacing:.3px; }
+  table.results th.agent-reflex{ color: var(--ghost-reflex); }
+  table.results th.agent-model{ color: var(--ghost-model); }
+  table.results th.agent-goal{ color: var(--agent-goal); }
+  table.results th.agent-utility{ color: var(--agent-utility); }
+
+  footer{ text-align:center; color: var(--text-dim); font-size: 10.5px; margin-top: 14px; line-height:1.6; }
+  footer b{ color: var(--text); }
+
+  @media (prefers-reduced-motion: reduce){ *{ transition:none !important; } }
+  /* =======================================================================
+     PAC-LAB - Laboratorio de busqueda (subjuego DFS / BFS / A*)
+     ======================================================================= */
+  .btn-lab{
+    background: #e5233c; color: #fff;
+    box-shadow: 0 2px 0 rgba(0,0,0,.35), 0 0 14px rgba(229,35,60,.55);
+    animation: labPulse 2.2s ease-in-out infinite;
+  }
+  @keyframes labPulse{
+    0%,100%{ box-shadow: 0 2px 0 rgba(0,0,0,.35), 0 0 10px rgba(229,35,60,.45); }
+    50%    { box-shadow: 0 2px 0 rgba(0,0,0,.35), 0 0 22px rgba(229,35,60,.95); }
+  }
+
+  #labScreen{
+    position: fixed; inset: 0; z-index: 50; overflow-y: auto;
+    background:
+      radial-gradient(circle at 15% -10%, #1b2448 0%, transparent 55%),
+      radial-gradient(circle at 100% 0%, #2a1030 0%, transparent 45%),
+      #070a13;
+    padding: 14px 16px 40px;
+  }
+  #labScreen[hidden]{ display:none; }
+  .lab-wrap{ max-width: 1240px; margin: 0 auto; }
+
+  .lab-top{
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+    border-bottom:1px solid #222c4c; padding-bottom:10px; margin-bottom:12px;
+  }
+  .lab-top h2{
+    margin:0; font-size:17px; letter-spacing:2.5px; color:#ff4d63;
+    text-shadow: 0 0 12px rgba(229,35,60,.5);
+  }
+  .lab-top .lab-sub{ color:var(--text-dim); font-size:11px; letter-spacing:.4px; flex:1 1 200px; }
+  .lab-top button{ padding:7px 12px; font-size:10.5px; }
+
+  .lab-tabs{ display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap; }
+  .lab-tab{
+    font-family:inherit; font-size:11px; letter-spacing:1px; text-transform:uppercase;
+    padding:8px 14px; border-radius:6px; cursor:pointer; font-weight:bold;
+    background:transparent; color:var(--text-dim); border:1px solid #26314f; box-shadow:none;
+  }
+  .lab-tab:hover{ color:var(--text); border-color:#3a4a78; }
+  .lab-tab.active{ color:#070a13; background:var(--accent); border-color:var(--accent); }
+
+  .lab-panel[hidden]{ display:none; }
+
+  /* --- selector de algoritmo --- */
+  .algo-picker{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+  .algo-chip{
+    flex:1 1 130px; cursor:pointer; border:2px solid #26314f; border-radius:8px;
+    padding:8px 10px; background:rgba(255,255,255,.02);
+    transition: border-color .15s ease, background .15s ease, transform .1s ease;
+  }
+  .algo-chip:hover{ transform:translateY(-1px); border-color:#3a4a78; }
+  .algo-chip input{ display:none; }
+  .algo-chip .algo-name{ font-size:14px; font-weight:bold; letter-spacing:2px; color:var(--text-dim); }
+  .algo-chip .algo-ds{ font-size:9.5px; color:var(--text-dim); letter-spacing:.2px; margin-top:2px; }
+  .algo-chip.sel-dfs:has(input:checked){ border-color:var(--ghost1); background:rgba(255,59,92,.1); }
+  .algo-chip.sel-dfs:has(input:checked) .algo-name{ color:var(--ghost1); }
+  .algo-chip.sel-bfs:has(input:checked){ border-color:var(--wall-edge); background:rgba(63,157,255,.1); }
+  .algo-chip.sel-bfs:has(input:checked) .algo-name{ color:var(--wall-edge); }
+  .algo-chip.sel-astar:has(input:checked){ border-color:var(--pac); background:rgba(255,210,63,.1); }
+  .algo-chip.sel-astar:has(input:checked) .algo-name{ color:var(--pac); }
+
+  /* --- selector de nivel --- */
+  .nivel-picker{ display:flex; gap:5px; flex-wrap:wrap; margin-bottom:10px; }
+  .nivel-chip{
+    font-family:inherit; font-size:10px; letter-spacing:.4px; text-transform:none;
+    padding:6px 9px; border-radius:5px; cursor:pointer; font-weight:normal;
+    background:transparent; color:var(--text-dim); border:1px solid #26314f; box-shadow:none;
+  }
+  .nivel-chip:hover{ color:var(--text); border-color:#3a4a78; }
+  .nivel-chip.active{ color:var(--text); border-color:var(--accent); background:rgba(40,224,224,.1); }
+  .nivel-chip .estrella{ color:var(--pac); }
+
+  /* --- disposicion del laboratorio --- */
+  .lab-grid{ display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; }
+  .lab-col-mapa{ flex:1 1 600px; min-width:320px; }
+  .lab-col-info{ flex:1 1 330px; min-width:290px; }
+
+  .lab-box{
+    background:var(--bg-panel); border:1px solid #1e2740; border-radius:8px;
+    padding:10px 12px; margin-bottom:10px;
+  }
+  .lab-box h3{
+    margin:0 0 7px; font-size:10.5px; letter-spacing:1.4px; text-transform:uppercase;
+    color:var(--accent); font-weight:normal;
+  }
+  .lab-box p{ margin:0 0 6px; font-size:11.5px; line-height:1.55; color:var(--text-dim); }
+  .lab-box p:last-child{ margin-bottom:0; }
+  .lab-box p b{ color:var(--text); }
+  .lab-box code{ color:var(--pac); font-size:11px; }
+
+  #labCanvas{
+    display:block; width:100%; height:auto; border-radius:8px;
+    border:1px solid #1e2740; background:#070a13;
+  }
+
+  .lab-controles{ display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:9px; }
+  .lab-controles button{ padding:8px 11px; font-size:11px; letter-spacing:.6px; }
+  .lab-controles .paso-info{
+    font-size:11px; color:var(--text-dim); margin-left:auto; letter-spacing:.4px;
+  }
+  .lab-controles .paso-info b{ color:var(--accent); }
+
+  .lab-toggles{ display:flex; gap:12px; flex-wrap:wrap; margin-top:9px; font-size:10.5px; color:var(--text-dim); }
+  .lab-toggles label{ display:inline-flex; align-items:center; gap:5px; cursor:pointer; }
+  .lab-toggles input{ accent-color:var(--accent); }
+
+  .lab-leyenda{ display:flex; gap:12px; flex-wrap:wrap; margin-top:9px; font-size:10.5px; color:var(--text-dim); }
+  .lab-leyenda span{ display:inline-flex; align-items:center; gap:5px; }
+  .lab-leyenda i{ width:11px; height:11px; border-radius:3px; display:inline-block; border:1px solid rgba(255,255,255,.15); }
+
+  /* --- estadisticas --- */
+  .stat-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:6px; }
+  .stat{
+    background:rgba(255,255,255,.03); border:1px solid #1e2740; border-radius:6px;
+    padding:6px 8px;
+  }
+  .stat .k{ font-size:9px; letter-spacing:.5px; color:var(--text-dim); text-transform:uppercase; }
+  .stat .v{ font-size:16px; font-weight:bold; color:var(--text); }
+  .stat .v.si{ color:var(--ok); }
+  .stat .v.no{ color:var(--ghost1); }
+
+  /* --- frontera dibujada como estructura --- */
+  .frontera-caja{ min-height:64px; }
+  .frontera-nota{ font-size:10px; color:var(--text-dim); margin-bottom:6px; letter-spacing:.3px; }
+  .pila{ display:flex; flex-direction:column; gap:3px; max-height:190px; overflow-y:auto; }
+  .cola{ display:flex; flex-direction:row; gap:3px; overflow-x:auto; padding-bottom:5px; }
+  .lista-f{ display:flex; flex-direction:column; gap:3px; max-height:190px; overflow-y:auto; }
+  .nodo-f{
+    font-size:10px; letter-spacing:.2px; padding:3px 6px; border-radius:4px;
+    border:1px solid #2b3a67; background:rgba(255,255,255,.03); color:var(--text-dim);
+    white-space:nowrap; display:flex; gap:7px; align-items:center;
+  }
+  .cola .nodo-f{ flex-direction:column; gap:1px; align-items:center; min-width:46px; }
+  .nodo-f .pos{ color:var(--text); }
+  .nodo-f .fv{ color:var(--pac); }
+  .nodo-f.elegido{
+    border-color:var(--accent); background:rgba(40,224,224,.14); color:var(--text);
+    box-shadow:0 0 10px rgba(40,224,224,.35);
+  }
+  .nodo-f.elegido::before{ content:'\25B6'; color:var(--accent); font-size:9px; }
+  .frontera-extremos{ display:flex; justify-content:space-between; font-size:9px; color:var(--text-dim); margin-top:4px; }
+
+  /* --- grafo --- */
+  .grafo-caja{ overflow:auto; max-height:360px; border-radius:6px; background:rgba(0,0,0,.25); }
+  .grafo-caja svg{ display:block; }
+  .grafo-caja text{ font-family:"Courier New",monospace; pointer-events:none; }
+
+  /* --- carrera --- */
+  .carrera-pistas{ display:flex; gap:12px; flex-wrap:wrap; }
+  .pista{ flex:1 1 300px; min-width:250px; border:2px solid transparent; border-radius:8px; padding:6px; }
+  .pista h4{
+    margin:0 0 6px; font-size:12px; letter-spacing:2px; display:flex;
+    align-items:center; justify-content:space-between;
+  }
+  .pista h4 .marca{ font-size:9.5px; letter-spacing:.4px; color:var(--text-dim); }
+  .pista canvas{ display:block; width:100%; height:auto; border-radius:6px; border:1px solid #1e2740; background:#070a13; }
+  .pista .barra{ height:5px; background:#1a2440; border-radius:3px; margin-top:6px; overflow:hidden; }
+  .pista .barra i{ display:block; height:100%; width:0%; border-radius:3px; transition:width .1s linear; }
+  .pista .cifras{ display:flex; justify-content:space-between; font-size:10px; color:var(--text-dim); margin-top:5px; }
+  .pista.gana{ border-color:var(--ok); }
+
+  .apuesta{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+  .apuesta button{ padding:7px 12px; font-size:10.5px; }
+  .apuesta .resultado-apuesta{ font-size:11.5px; letter-spacing:.3px; }
+  .apuesta .resultado-apuesta.bien{ color:var(--ok); }
+  .apuesta .resultado-apuesta.mal{ color:var(--ghost2); }
+
+  /* --- comparativa --- */
+  table.comp{ width:100%; border-collapse:collapse; margin-top:8px; font-size:11px; }
+  table.comp th, table.comp td{
+    border:1px solid #222c4c; padding:5px 7px; text-align:center; color:var(--text);
+  }
+  table.comp th{ font-weight:normal; letter-spacing:.5px; color:var(--text-dim); background:rgba(255,255,255,.03); }
+  table.comp td:first-child, table.comp th:first-child{ text-align:left; }
+  table.comp td.algo-dfs{ color:var(--ghost1); font-weight:bold; }
+  table.comp td.algo-bfs{ color:var(--wall-edge); font-weight:bold; }
+  table.comp td.algo-astar{ color:var(--pac); font-weight:bold; }
+  table.comp td.si{ color:var(--ok); }
+  table.comp td.no{ color:var(--ghost1); }
+  table.comp tr.sep td{ background:rgba(255,255,255,.05); letter-spacing:1px; font-size:10px; color:var(--text-dim); text-align:left; }
+  .comp-acciones{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .comp-acciones button{ padding:8px 12px; font-size:10.5px; }
+  .comp-nota{ font-size:10.5px; color:var(--text-dim); margin-top:8px; line-height:1.6; }
+
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>PAC-MAN · AGENTES INTELIGENTES</h1>
+    <p>Comparación práctica de 4 arquitecturas de agentes: reflejo simple, modelo, objetivos y utilidad (AIMA cap. 1–2)</p>
+  </header>
+
+  <div class="layout">
+    <div class="game-column">
+      <div class="hud">
+        <span class="score">PUNTAJE: <span id="scoreVal">0</span></span>
+        <span class="dots-left">PUNTOS RESTANTES: <span id="dotsVal">0</span></span>
+      </div>
+      <div class="powerbar">
+        <span class="power-chip" id="chipSalto" title="Tecla: barra espaciadora (modo manual)">⚡ Salto: <b id="saltoEstado">listo</b></span>
+        <span class="power-chip" id="chipEscudo" title="Tecla: E (modo manual)">🛡 Escudo: <b id="escudoEstado">listo</b></span>
+      </div>
+
+      <div class="canvas-wrap">
+        <canvas id="game" width="640" height="480"></canvas>
+        <div class="scanlines"></div>
+        <div class="overlay" id="overlay">
+          <h2 id="overlayTitle">PAC-MAN: AGENTES</h2>
+          <p>Usa las flechas del teclado para mover a Pac-Man. Elige quién controla a Pac-Man y presiona <b>Iniciar</b>.</p>
+          <p id="overlayMsg"></p>
+        </div>
+      </div>
+
+      <div class="mode-selector">
+        <label title="Tú mueves a Pac-Man con las flechas"><input type="radio" name="mode" value="manual" checked><span>Manual</span></label>
+        <label title="Agente de reflejo simple: reglas condición-acción, sin memoria"><input type="radio" name="mode" value="reflex"><span>Reflejo</span></label>
+        <label title="Agente basado en modelo: usa estado interno para anticipar"><input type="radio" name="mode" value="model"><span>Modelo</span></label>
+        <label title="Agente basado en objetivos: planifica con búsqueda BFS hacia una meta binaria"><input type="radio" name="mode" value="goal"><span>Objetivo</span></label>
+        <label title="Agente basado en utilidad: pondera comida vs. peligro con una función continua"><input type="radio" name="mode" value="utility"><span>Utilidad</span></label>
+      </div>
+      <div class="controls-row">
+        <button id="btnStart">Iniciar</button>
+        <button id="btnPause" class="secondary" disabled>Pausar</button>
+        <button id="btnExperiment" class="secondary">20 partidas x agente</button>
+      </div>
+      <div class="controls-row" style="justify-content:center; margin-top:10px;">
+        <button id="btnLab" class="btn-lab" title="Abre PAC-LAB: subjuego para comparar DFS, BFS y A*">&#128300; Prueba de algoritmos</button>
+      </div>
+      <p class="speed-note" style="text-align:center;">PAC-LAB es un <b>subjuego aparte</b>: un laberinto chico con lodo donde DFS, BFS y A* se ven paso a paso, con su grafo, su frontera y la tabla comparativa.</p>
+      <div class="speed-row">
+        <label for="speedRange">Velocidad</label>
+        <input type="range" id="speedRange" min="0.25" max="3" step="0.25" value="1">
+        <b id="speedVal">1.00x</b>
+      </div>
+
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--pac)"></i> Pac-Man</span>
+        <span><i class="swatch" style="background:var(--ghost1)"></i> Fantasma A</span>
+        <span><i class="swatch" style="background:var(--ghost2)"></i> Fantasma B</span>
+        <span><i class="swatch" style="background:var(--ghost3)"></i> Fantasma C</span>
+      </div>
+      <p class="speed-note">Pac-Man se mueve en <b>cada ciclo</b>; los fantasmas solo cada <b id="ghostEveryVal">2</b> ciclos → Pac-Man es más rápido que ellos.</p>
+    </div>
+
+    <aside class="status-panel">
+      <h2>Panel del agente</h2>
+
+      <div class="live-summary">
+        <div class="live-row"><span>Modo activo</span><b id="liveModo">Manual</b></div>
+        <div class="live-row"><span>Acción actual</span><b id="liveAccion">—</b></div>
+        <div class="live-regla" id="liveRegla">Presiona Iniciar para comenzar.</div>
+      </div>
+
+      <div class="tabs" id="tabButtons">
+        <button class="tab-btn active" data-tab="percepcion" type="button">Percepción</button>
+        <button class="tab-btn" data-tab="decision" type="button">Decisión</button>
+        <button class="tab-btn" data-tab="experimento" type="button">Experimento</button>
+        <button class="tab-btn" data-tab="peas" type="button">PEAS</button>
+        <button class="tab-btn" data-tab="poderes" type="button">Poderes</button>
+        <button class="tab-btn" data-tab="glosario" type="button">Glosario</button>
+      </div>
+
+      <div class="tab-panel" data-panel="percepcion">
+        <div class="status-block">
+          <h3>Percepción recibida</h3>
+          <pre id="statusPercepcion">—</pre>
+        </div>
+        <div class="status-block">
+          <h3>Ventana perceptual</h3>
+          <pre class="mapa" id="statusVentana">—</pre>
+        </div>
+      </div>
+
+      <div class="tab-panel" data-panel="decision" hidden>
+        <div class="status-block">
+          <h3>Estado interno</h3>
+          <pre id="statusEstado">—</pre>
+        </div>
+        <div class="status-block">
+          <h3>Acción elegida</h3>
+          <pre id="statusAccion">—</pre>
+        </div>
+        <div class="status-block">
+          <h3>Traza: últimas 5 decisiones</h3>
+          <pre id="statusTraza">—</pre>
+        </div>
+      </div>
+
+      <div class="tab-panel" data-panel="experimento" hidden>
+        <div class="status-block">
+          <h3>Resultados del experimento (20 partidas)</h3>
+          <div id="experimentResults">Sin datos aún. Presiona "20 partidas x agente" (bajo el juego).</div>
+        </div>
+      </div>
+
+      <div class="tab-panel" data-panel="peas" hidden>
+        <p class="tab-intro"><b>PEAS</b> son las siglas (en inglés) de <b>P</b>erformance, <b>E</b>nvironment, <b>A</b>ctuators, <b>S</b>ensors — en español: <b>Rendimiento, Ambiente, Actuadores, Sensores</b>. Es el marco que usa la Inteligencia Artificial (Russell &amp; Norvig) para describir por completo la "tarea" de un agente ANTES de diseñarlo: qué debe lograr, dónde actúa, con qué mueve el mundo, y con qué lo percibe. Sin definir esto primero, no se puede decidir qué tan "inteligente" necesita ser el agente.</p>
+        <div class="peas-grid">
+          <details open>
+            <summary>P — Rendimiento (Performance)</summary>
+            <p>Puntaje acumulado (10 por punto comido), tiempo de supervivencia en ciclos, y evitar ser atrapado por un fantasma. El experimento de 20 partidas mide el promedio y la desviación estándar de ambas métricas por arquitectura.</p>
+          </details>
+          <details>
+            <summary>E — Ambiente (Environment)</summary>
+            <p>Laberinto de 32×24 celdas con paredes fijas. Es <b>parcialmente observable</b> (Pac-Man solo percibe fantasmas dentro de un radio de <code>RADIO_PERCEPCION_FANTASMA</code>), <b>multiagente</b> (3 fantasmas con estrategia propia), <b>dinámico</b> (los fantasmas se mueven aunque Pac-Man no actúe), <b>secuencial</b>, <b>discreto</b> y <b>determinista</b> dado el estado y las acciones (salvo el desempate aleatorio entre opciones igual de buenas).</p>
+          </details>
+          <details>
+            <summary>A — Actuadores (Actuators)</summary>
+            <p>Moverse una celda en una de cuatro direcciones (o quedarse quieto si no hay movimiento válido), más los dos actuadores especiales de la pestaña <b>Poderes</b>: saltar 2 celdas, o activar el escudo.</p>
+          </details>
+          <details>
+            <summary>S — Sensores (Sensors)</summary>
+            <p>Posición propia, direcciones abiertas alrededor, posición y distancia a los fantasmas visibles (si están dentro del radio de percepción), y la ubicación del punto de comida más cercano. Esta es exactamente la <code>percepcion</code> que reciben las cuatro arquitecturas: <code>agenteReflejoPacman</code>, <code>agenteModeloPacman</code>, <code>agenteObjetivoPacman</code> y <code>agenteUtilidadPacman</code> en cada ciclo.</p>
+          </details>
+        </div>
+      </div>
+
+      <div class="tab-panel" data-panel="poderes" hidden>
+        <p class="tab-intro">Los puntos que Pac-Man come no solo son el marcador: también son una <b>moneda</b> que se puede canjear por dos recompensas de supervivencia. No forman parte de las 4 arquitecturas evaluadas — son una capa aparte, disponible por igual para el jugador humano y para los 4 agentes, así la comparación entre arquitecturas sigue siendo justa.</p>
+        <div class="peas-grid">
+          <details open>
+            <summary>⚡ Salto — 50 puntos</summary>
+            <p>Mueve a Pac-Man <b>2 celdas de un solo golpe</b> en una dirección (si ambas celdas están libres de muros), comiendo los puntos del camino. Tecla <code>ESPACIO</code> en modo manual; en modo agente se activa solo si el fantasma más cercano está a ≤3 celdas. Tras usarse, entra en reposo (cooldown) 15 ciclos.</p>
+          </details>
+          <details open>
+            <summary>🛡 Escudo — 80 puntos</summary>
+            <p>Mientras está activo, absorbe <b>una</b> captura: en vez de terminar la partida, el escudo se rompe (reposo de 40 ciclos) y Pac-Man es empujado lejos del fantasma que lo atrapó. Tecla <code>E</code> en modo manual; en modo agente se compra automáticamente en cuanto hay peligro cercano y saldo suficiente.</p>
+          </details>
+        </div>
+        <p class="tab-intro">La barra de arriba del juego (⚡/🛡) siempre muestra si cada poder está <span style="color:var(--ok)">listo</span>, en <span style="color:var(--accent)">uso</span>, o en reposo con el número de ciclos que faltan.</p>
+      </div>
+
+      <div class="tab-panel" data-panel="glosario" hidden>
+        <div class="peas-grid">
+          <details open>
+            <summary>Agente racional</summary>
+            <p>Todo lo que percibe su entorno con sensores y actúa sobre él con actuadores, eligiendo la acción que maximiza su medida de rendimiento (el "Puntaje prom." y "Superviv. prom." de la pestaña Experimento) dado lo que ha percibido hasta ahora.</p>
+          </details>
+          <details>
+            <summary>Percepción</summary>
+            <p>Lo que el entorno le entrega al agente en UN instante (este ciclo). En este juego: la posición de Pac-Man, los fantasmas visibles y el punto más cercano — visible en la pestaña Percepción.</p>
+          </details>
+          <details>
+            <summary>Estado interno / memoria</summary>
+            <p>Lo que el agente recuerda de ciclos ANTERIORES, porque la percepción actual por sí sola no alcanza. Solo el agente basado en modelo lo usa (recuerda la posición pasada del fantasma); los otros tres deciden solo con la percepción de ahora.</p>
+          </details>
+          <details>
+            <summary>Bucle percepción → decisión → acción</summary>
+            <p>El ciclo que se repite cada <code>TICK_MS</code>: el entorno entrega una percepción, la arquitectura activa decide una acción, y esa acción cambia el entorno para el siguiente ciclo. Es la función <code>doTick()</code> del código.</p>
+          </details>
+          <details>
+            <summary>Arquitectura vs. programa del agente</summary>
+            <p>Agente = Arquitectura + Programa. La arquitectura es el "hardware" que entrega percepciones y ejecuta acciones (el bucle del juego, siempre igual); el programa es la lógica de decisión que cambia según el modo elegido (<code>agenteReflejoPacman</code>, etc.).</p>
+          </details>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <footer>
+    Controles: <b>flechas</b> mueven a Pac-Man, <b>ESPACIO</b> salta, <b>E</b> activa el escudo — los tres solo en modo manual.<br>
+    El selector cambia la arquitectura que controla a <b>Pac-Man</b>: tú mismo, o cuatro tipos de agente en orden creciente de capacidad cognitiva — reflejo simple (<code>agenteReflejoPacman</code>), basado en modelo (<code>agenteModeloPacman</code>), basado en objetivos (<code>agenteObjetivoPacman</code>) y basado en utilidad (<code>agenteUtilidadPacman</code>). Los tres fantasmas persiguen siempre con una estrategia fija (persecución voraz), para que la comparación se centre en el desempeño de Pac-Man.
+  </footer>
+</div>
+
+<!-- =====================================================================
+     PAC-LAB · Laboratorio de búsqueda (subjuego DFS / BFS / A*)
+     Pantalla completa independiente del juego principal.
+     ===================================================================== -->
+<div id="labScreen" hidden>
+  <div class="lab-wrap">
+
+    <div class="lab-top">
+      <h2>🔬 PAC-LAB</h2>
+      <span class="lab-sub">Laboratorio de búsqueda · DFS, BFS y A* sobre el mismo laberinto · Pac-Man debe alcanzar al fantasma en pánico 👻</span>
+      <button id="labSonido" class="secondary" title="Activar o silenciar el sonido">🔊 Sonido</button>
+      <button id="labVolver" class="secondary">← Volver al juego</button>
+    </div>
+
+    <div class="lab-tabs" id="labTabs">
+      <button class="lab-tab active" data-labtab="laboratorio" type="button">Laboratorio</button>
+      <button class="lab-tab" data-labtab="carrera" type="button">Carrera</button>
+      <button class="lab-tab" data-labtab="comparativa" type="button">Comparativa</button>
+    </div>
+
+    <!-- ============================ LABORATORIO ============================ -->
+    <div class="lab-panel" data-labpanel="laboratorio">
+
+      <div class="nivel-picker" id="labNiveles"></div>
+
+      <div class="algo-picker">
+        <label class="algo-chip sel-dfs">
+          <input type="radio" name="labAlgo" value="dfs">
+          <div class="algo-name">DFS</div>
+          <div class="algo-ds">Pila (LIFO) · expande el último generado</div>
+        </label>
+        <label class="algo-chip sel-bfs">
+          <input type="radio" name="labAlgo" value="bfs">
+          <div class="algo-name">BFS</div>
+          <div class="algo-ds">Cola (FIFO) · expande el más superficial</div>
+        </label>
+        <label class="algo-chip sel-astar">
+          <input type="radio" name="labAlgo" value="astar" checked>
+          <div class="algo-name">A*</div>
+          <div class="algo-ds">Cola de prioridad · expande el menor f = g + h</div>
+        </label>
+      </div>
+
+      <div class="lab-grid">
+        <div class="lab-col-mapa">
+          <canvas id="labCanvas" width="728" height="504"></canvas>
+
+          <div class="lab-controles">
+            <button id="labInicio" class="secondary" title="Volver al primer paso">⏮</button>
+            <button id="labAtras" class="secondary" title="Un paso atrás">◀</button>
+            <button id="labPlay" title="Reproducir la búsqueda paso a paso">▶ Buscar</button>
+            <button id="labAdelante" class="secondary" title="Un paso adelante">▶</button>
+            <button id="labFin" class="secondary" title="Saltar al final de la búsqueda">⏭</button>
+            <button id="labEjecutar" class="secondary" title="Pac-Man recorre el camino encontrado">🟡 Ejecutar</button>
+            <span class="paso-info">Paso <b id="labPasoActual">0</b> / <span id="labPasoTotal">0</span></span>
+          </div>
+
+          <div class="lab-toggles">
+            <label><input type="checkbox" id="labVerF" checked> Ver f = g + h</label>
+            <label><input type="checkbox" id="labVerPadres" checked> Ver flechas de padre</label>
+            <label><input type="checkbox" id="labVerFrontera" checked> Resaltar frontera</label>
+            <label>Velocidad
+              <input type="range" id="labVelocidad" min="1" max="10" step="1" value="6" style="width:90px; accent-color:var(--accent);">
+            </label>
+          </div>
+
+          <div class="lab-leyenda">
+            <span><i style="background:#2b3a67"></i> Pared</span>
+            <span><i style="background:#0e1424"></i> Piso (costo 1)</span>
+            <span><i style="background:#6b4a2a"></i> Lodo (costo 3)</span>
+            <span><i style="background:#1b4d7a"></i> Expandido</span>
+            <span><i style="background:#28e0e0"></i> En la frontera</span>
+            <span><i style="background:#ffd23f"></i> Camino final</span>
+          </div>
+
+          <div class="lab-box" style="margin-top:10px;">
+            <h3>Nivel</h3>
+            <p id="labNivelDesc">—</p>
+          </div>
+        </div>
+
+        <div class="lab-col-info">
+          <div class="lab-box">
+            <h3 id="labComoTitulo">Cómo decide</h3>
+            <div id="labComoDecide"></div>
+          </div>
+
+          <div class="lab-box">
+            <h3>Estadísticas de la búsqueda</h3>
+            <div class="stat-grid">
+              <div class="stat"><div class="k">Nodos expandidos</div><div class="v" id="statExp">—</div></div>
+              <div class="stat"><div class="k">Máx. en frontera</div><div class="v" id="statFron">—</div></div>
+              <div class="stat"><div class="k">Pasos del camino</div><div class="v" id="statPasos">—</div></div>
+              <div class="stat"><div class="k">Costo del camino</div><div class="v" id="statCosto">—</div></div>
+              <div class="stat"><div class="k">Tiempo</div><div class="v" id="statTiempo">—</div></div>
+              <div class="stat"><div class="k">¿Óptimo?</div><div class="v" id="statOptimo">—</div></div>
+            </div>
+            <p style="margin-top:8px; font-size:10.5px;" id="statNota">El costo óptimo real se calcula aparte con búsqueda de costo uniforme, para poder decir con honestidad si el algoritmo acertó.</p>
+          </div>
+
+          <div class="lab-box">
+            <h3 id="labFronteraTitulo">Frontera</h3>
+            <div class="frontera-nota" id="labFronteraNota">—</div>
+            <div class="frontera-caja" id="labFrontera"></div>
+            <div class="frontera-extremos" id="labFronteraExtremos"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="lab-box">
+        <h3>Árbol de búsqueda (el grafo que va construyendo el algoritmo)</h3>
+        <p style="font-size:10.5px;">Cada círculo es un <b>nodo</b>: una celda alcanzada, con el camino por el que llegó. La arista lo une a su <b>padre</b>. La profundidad crece hacia abajo. <span id="labGrafoNota"></span></p>
+        <div class="grafo-caja" id="labGrafo"></div>
+      </div>
+    </div>
+
+    <!-- ============================== CARRERA ============================== -->
+    <div class="lab-panel" data-labpanel="carrera" hidden>
+      <div class="nivel-picker" id="labNivelesCarrera"></div>
+
+      <div class="lab-box">
+        <h3>Apuesta antes de largar</h3>
+        <p>Los tres algoritmos resuelven <b>el mismo laberinto a la vez</b>. ¿Cuál creés que va a encontrar el camino <b>más barato</b>? (no siempre gana el que llega primero)</p>
+        <div class="apuesta">
+          <button id="apuestaDfs" class="secondary">Apuesto a DFS</button>
+          <button id="apuestaBfs" class="secondary">Apuesto a BFS</button>
+          <button id="apuestaAstar" class="secondary">Apuesto a A*</button>
+          <button id="labLargar">🚦 ¡Largar!</button>
+          <span class="resultado-apuesta" id="labResultadoApuesta"></span>
+        </div>
+      </div>
+
+      <div class="carrera-pistas" id="labPistas"></div>
+
+      <div class="lab-box" style="margin-top:12px;">
+        <h3>Marcador</h3>
+        <div id="labMarcador"><p>Presioná <b>¡Largar!</b> para correr los tres al mismo tiempo.</p></div>
+      </div>
+    </div>
+
+    <!-- ============================ COMPARATIVA ============================ -->
+    <div class="lab-panel" data-labpanel="comparativa" hidden>
+      <div class="lab-box">
+        <h3>Medición sobre los 5 escenarios</h3>
+        <p>Ejecuta los tres algoritmos en los cinco niveles y promedia. Es exactamente la tabla que pide el entregable de la Parte IV: <b>nodos expandidos</b>, <b>costo de la solución</b> y <b>tiempo en milisegundos</b>.</p>
+        <div class="comp-acciones">
+          <button id="labCorrer3">Correr los 3 en este nivel</button>
+          <button id="labCorrer5">Correr los 5 escenarios</button>
+          <button id="labCopiar" class="secondary">📋 Copiar tabla</button>
+          <span id="labCopiarAviso" style="font-size:10.5px; color:var(--ok);"></span>
+        </div>
+        <div id="labTablaComp"><p class="comp-nota">Sin datos todavía.</p></div>
+      </div>
+
+      <div class="lab-box">
+        <h3>Modelado del problema de búsqueda</h3>
+        <table class="comp">
+          <thead><tr><th>Componente</th><th>En PAC-LAB</th></tr></thead>
+          <tbody>
+            <tr><td>Estado</td><td>La celda que ocupa Pac-Man, <code>(fila, columna)</code></td></tr>
+            <tr><td>Estado inicial</td><td>La celda de partida del nivel</td></tr>
+            <tr><td>Acciones</td><td>Arriba, abajo, izquierda, derecha (solo a celdas sin pared)</td></tr>
+            <tr><td>Modelo de transición</td><td>La acción mueve a Pac-Man una celda en esa dirección</td></tr>
+            <tr><td>Prueba de meta</td><td>¿La celda es la del fantasma en pánico?</td></tr>
+            <tr><td>Costo de un paso</td><td><b>1</b> en piso, <b>3</b> en lodo</td></tr>
+            <tr><td>Heurística h(n)</td><td>Distancia Manhattan de la celda a la meta</td></tr>
+            <tr><td>Nodo</td><td>Celda + padre + <code>g</code> (costo real acumulado) + <code>h</code> + <code>f = g + h</code> + profundidad</td></tr>
+            <tr><td>Frontera</td><td>Pila en DFS · cola en BFS · cola de prioridad por <code>f</code> en A*</td></tr>
+          </tbody>
+        </table>
+        <p class="comp-nota"><b>¿Por qué la heurística es admisible?</b> Manhattan cuenta cuántas celdas faltan suponiendo que no hay paredes y que cada paso cuesta 1, que es el mínimo posible. Como en el laberinto real hay paredes que obligan a rodear y lodo que triplica el costo, el costo verdadero siempre es mayor o igual a esa estimación: h nunca sobreestima, así que A* garantiza el camino óptimo.</p>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* =========================================================================
+   CONFIGURACIÓN Y CONSTANTES DEL MUNDO
+   ========================================================================= */
+const COLS = 32, ROWS = 24, CELL = 20;
+const BASE_TICK_MS = 160;      // duración base de un ciclo percepción→decisión→acción
+let TICK_MS = BASE_TICK_MS;    // duración efectiva del ciclo, ajustada por el control de velocidad
+const MAX_TICKS_SIM = 4000;    // límite de seguridad para partidas simuladas
+const RADIO_PERCEPCION_FANTASMA = 16; // distancia Manhattan máxima a la que Pac-Man percibe al fantasma
+const VENTANA_RADIO = 4;       // ventana perceptual de (2R+1)x(2R+1) celdas alrededor de Pac-Man
+
+const DIRS = {
+  up:    { dr: -1, dc: 0 },
+  down:  { dr:  1, dc: 0 },
+  left:  { dr:  0, dc: -1 },
+  right: { dr:  0, dc: 1 }
+};
+
+const COLORS = {
+  bg: '#0b0f1a', wall: '#2b3a67', wallEdge: '#3f9dff',
+  dot: '#f2f0e6', pac: '#ffd23f'
+};
+const GHOST_COLORS = ['#ff3b5c', '#ff9f3f', '#b455ff'];
+
+const PAC_START = { r: 22, c: 1 };
+// Tres fantasmas, cada uno con su propio punto de partida. Los tres comparten
+// la MISMA estrategia fija de persecución (perseguirPacman): no son las
+// arquitecturas evaluadas, solo suben la dificultad del entorno.
+const GHOSTS_START = [
+  { r: 1,  c: 30, id: 'A' },
+  { r: 22, c: 30, id: 'B' },
+  { r: 1,  c: 15, id: 'C' }
+];
+const GHOST_MOVE_EVERY = 2; // los fantasmas se mueven 1 de cada 2 ciclos → Pac-Man es el doble de rápido
+
+/* =========================================================================
+   CONSTRUCCIÓN DEL LABERINTO (entorno)
+   0 = piso abierto, 1 = pared
+   ========================================================================= */
+function buildMaze(){
+  const grid = [];
+  for (let r = 0; r < ROWS; r++) grid.push(new Array(COLS).fill(0));
+  for (let r = 0; r < ROWS; r++) { grid[r][0] = 1; grid[r][COLS - 1] = 1; }
+  for (let c = 0; c < COLS; c++) { grid[0][c] = 1; grid[ROWS - 1][c] = 1; }
+  const pillarRows = [3, 8, 13, 18];
+  const pillarCols = [3, 9, 15, 21, 27];
+  for (const pr of pillarRows) {
+    for (const pc of pillarCols) {
+      for (let dr = 0; dr < 2; dr++) {
+        for (let dc = 0; dc < 2; dc++) {
+          const r = pr + dr, c = pc + dc;
+          if (r > 0 && r < ROWS - 1 && c > 0 && c < COLS - 1) grid[r][c] = 1;
+        }
+      }
+    }
+  }
+  return grid;
+}
+const maze = buildMaze();
+
+function buildDots(){
+  const dots = new Set();
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const enInicioFantasma = GHOSTS_START.some(g => g.r === r && g.c === c);
+      if (maze[r][c] === 0 &&
+          !(r === PAC_START.r && c === PAC_START.c) &&
+          !enInicioFantasma) {
+        dots.add(r + ',' + c);
+      }
+    }
+  }
+  return dots;
+}
+
+/* =========================================================================
+   UTILIDADES DE MOVIMIENTO (compartidas por Pac-Man y el fantasma)
+   ========================================================================= */
+function canMove(pos, dirName){
+  const d = DIRS[dirName];
+  return maze[pos.r + d.dr][pos.c + d.dc] !== 1;
+}
+function stepPos(pos, dirName){
+  const d = DIRS[dirName];
+  return { r: pos.r + d.dr, c: pos.c + d.dc };
+}
+function manhattan(a, b){
+  return Math.abs(a.r - b.r) + Math.abs(a.c - b.c);
+}
+function openDirsAt(pos){
+  return { up: canMove(pos,'up'), down: canMove(pos,'down'), left: canMove(pos,'left'), right: canMove(pos,'right') };
+}
+// Elige, entre las direcciones abiertas, la que más reduce la distancia Manhattan a "objetivo".
+function elegirPasoHacia(pos, objetivo, openDirs){
+  const opciones = [];
+  for (const name of Object.keys(DIRS)) {
+    if (!openDirs[name]) continue;
+    opciones.push({ dir: name, dist: manhattan(stepPos(pos, name), objetivo) });
+  }
+  if (opciones.length === 0) return 'stay';
+  opciones.sort((a, b) => a.dist - b.dist);
+  const mejor = opciones[0].dist;
+  const empatadas = opciones.filter(o => o.dist === mejor);
+  return empatadas[Math.floor(Math.random() * empatadas.length)].dir;
+}
+// Elige, entre las direcciones abiertas, la que más ALEJA a "pos" de "amenaza".
+function elegirPasoAlejarse(pos, amenaza, openDirs){
+  const opciones = [];
+  for (const name of Object.keys(DIRS)) {
+    if (!openDirs[name]) continue;
+    opciones.push({ dir: name, dist: manhattan(stepPos(pos, name), amenaza) });
+  }
+  if (opciones.length === 0) return 'stay';
+  opciones.sort((a, b) => b.dist - a.dist);
+  const mejor = opciones[0].dist;
+  const empatadas = opciones.filter(o => o.dist === mejor);
+  return empatadas[Math.floor(Math.random() * empatadas.length)].dir;
+}
+// Punto (celda con comida) más cercano a "pos" por distancia Manhattan.
+function nearestDotTo(pos, dots){
+  let best = null, bestDist = Infinity;
+  dots.forEach(key => {
+    const [r, c] = key.split(',').map(Number);
+    const d = manhattan(pos, { r, c });
+    if (d < bestDist) { bestDist = d; best = { r, c }; }
+  });
+  return best;
+}
+
+// Búsqueda en anchura (BFS): primer paso del camino MÁS CORTO real entre
+// "origen" y "destino", respetando muros. A diferencia de elegirPasoHacia
+// (que solo mira 1 paso adelante con la heurística Manhattan), esto es una
+// PLANIFICACIÓN completa de la ruta -- la base del agente basado en objetivos.
+function bfsPrimerPaso(origen, destino){
+  if (origen.r === destino.r && origen.c === destino.c) return null;
+  const visitado = new Set([origen.r + ',' + origen.c]);
+  const cola = [{ pos: origen, primerPaso: null }];
+  let cabeza = 0;
+  while (cabeza < cola.length) {
+    const actual = cola[cabeza++];
+    const dirs = openDirsAt(actual.pos);
+    for (const name of Object.keys(DIRS)) {
+      if (!dirs[name]) continue;
+      const np = stepPos(actual.pos, name);
+      const key = np.r + ',' + np.c;
+      if (visitado.has(key)) continue;
+      const paso = actual.primerPaso || name;
+      if (np.r === destino.r && np.c === destino.c) return paso;
+      visitado.add(key);
+      cola.push({ pos: np, primerPaso: paso });
+    }
+  }
+  return null; // destino inalcanzable
+}
+
+// Explora con BFS (hasta "maxPasos" de profundidad real) todas las celdas
+// alcanzables desde "origen" y devuelve la más lejana de "amenaza": el
+// objetivo de un plan de escape con destino real, no solo "la dirección
+// que más aumenta la distancia en este instante" como hace el reflejo.
+function celdaEscapeMasLejana(origen, amenaza, maxPasos){
+  const visitado = new Set([origen.r + ',' + origen.c]);
+  let frontera = [origen];
+  let mejor = origen, mejorDist = manhattan(origen, amenaza);
+  for (let paso = 0; paso < maxPasos && frontera.length; paso++) {
+    const siguienteFrontera = [];
+    for (const pos of frontera) {
+      const dirs = openDirsAt(pos);
+      for (const name of Object.keys(DIRS)) {
+        if (!dirs[name]) continue;
+        const np = stepPos(pos, name);
+        const key = np.r + ',' + np.c;
+        if (visitado.has(key)) continue;
+        visitado.add(key);
+        siguienteFrontera.push(np);
+        const d = manhattan(np, amenaza);
+        if (d > mejorDist) { mejorDist = d; mejor = np; }
+      }
+    }
+    frontera = siguienteFrontera;
+  }
+  return mejor;
+}
+
+/* =========================================================================
+   PERCEPCIÓN DE PAC-MAN
+   Lo que el entorno entrega, en cada ciclo, a cualquier arquitectura de
+   agente que esté controlando a Pac-Man (reflejo o basado en modelo).
+   ========================================================================= */
+function percibirPacman(s){
+  const pacmanPos = { r: s.pacman.r, c: s.pacman.c };
+  const openDirs = openDirsAt(s.pacman);
+
+  // Con varios fantasmas, Pac-Man percibe a TODOS los que estén dentro del
+  // radio de percepción, ordenados por cercanía. "ghostPos"/"distFantasma"
+  // quedan como el fantasma más cercano (compatibilidad con los agentes,
+  // que solo necesitan razonar sobre la amenaza inmediata).
+  const ghostsVisibles = s.ghosts
+    .map(g => ({ r: g.r, c: g.c, id: g.id, dist: manhattan(pacmanPos, g) }))
+    .filter(g => g.dist <= RADIO_PERCEPCION_FANTASMA)
+    .sort((a, b) => a.dist - b.dist);
+  const masCercano = ghostsVisibles[0] || null;
+  const ghostPos = masCercano ? { r: masCercano.r, c: masCercano.c } : null;
+  const distFantasma = masCercano ? masCercano.dist : Infinity;
+
+  const nearestDotPos = nearestDotTo(pacmanPos, s.dots);
+  return {
+    pacmanPos, openDirs,
+    ghostPos, distFantasma, ghostsVisibles,
+    nearestDotPos,
+    dotsLeft: s.dots.size
+  };
+}
+
+/* Ventana perceptual textual (VENTANA_RADIO*2+1)^2, con Pac-Man al centro. */
+function buildPerceptualWindow(s, radius){
+  const { r: pr, c: pc } = s.pacman;
+  const filas = [];
+  for (let dr = -radius; dr <= radius; dr++) {
+    let fila = '';
+    for (let dc = -radius; dc <= radius; dc++) {
+      const rr = pr + dr, cc = pc + dc;
+      let ch;
+      if (rr < 0 || rr >= ROWS || cc < 0 || cc >= COLS) ch = '▒';
+      else if (dr === 0 && dc === 0) ch = '@';
+      else if (s.ghosts.some(g => g.r === rr && g.c === cc)) ch = 'G';
+      else if (maze[rr][cc] === 1) ch = '#';
+      else if (s.dots.has(rr + ',' + cc)) ch = '·';
+      else ch = ' ';
+      fila += ch;
+    }
+    filas.push(fila);
+  }
+  return filas.join('\n') + '\n\n@ Pac-Man   G fantasma   # muro   · punto';
+}
+
+/* =========================================================================
+   ARQUITECTURA 1 — AGENTE DE REFLEJO SIMPLE (controla a Pac-Man)
+   Firma: agenteReflejoPacman(percepcion) -> {accion, regla}
+   Reglas condición-acción explícitas. NO recibe ni usa memoria de ciclos
+   anteriores: cada decisión depende únicamente de la percepción actual.
+   ========================================================================= */
+const DISTANCIA_PELIGRO_REFLEJO = 5;
+
+function agenteReflejoPacman(percepcion){
+  const { pacmanPos, ghostPos, distFantasma, openDirs, nearestDotPos } = percepcion;
+
+  // Regla 1: SI el fantasma es percibido Y está a distancia de peligro
+  //          ENTONCES huir en la dirección que más aumenta la distancia.
+  if (ghostPos && distFantasma <= DISTANCIA_PELIGRO_REFLEJO) {
+    const accion = elegirPasoAlejarse(pacmanPos, ghostPos, openDirs);
+    return { accion, regla: 'Peligro inmediato: fantasma a ' + distFantasma + ' celdas → huir.' };
+  }
+
+  // Regla 2: SI no hay peligro inmediato ENTONCES dirigirse al punto más cercano.
+  if (nearestDotPos) {
+    const accion = elegirPasoHacia(pacmanPos, nearestDotPos, openDirs);
+    return { accion, regla: 'Sin peligro cercano → ir por el punto más próximo.' };
+  }
+
+  // Regla 3 (respaldo): sin objetivo claro, moverse al azar entre direcciones abiertas.
+  const dirs = Object.keys(openDirs).filter(d => openDirs[d]);
+  const accion = dirs.length ? dirs[Math.floor(Math.random() * dirs.length)] : 'stay';
+  return { accion, regla: 'Sin objetivo disponible → movimiento exploratorio.' };
+}
+
+/* =========================================================================
+   ARQUITECTURA 2 — AGENTE BASADO EN MODELO (controla a Pac-Man)
+   Firma: agenteModeloPacman(percepcion, estadoInterno) -> {accion, regla, nuevoEstado}
+
+   *** ESTA es la línea que marca la diferencia arquitectónica exacta con
+   agenteReflejoPacman: la firma recibe "estadoInterno" (memoria entre
+   ciclos) además de "percepcion". El reflejo simple jamás recibe ni
+   produce ese segundo parámetro. ***
+
+   El modelo del mundo que mantiene tiene dos partes, tal como exige la
+   teoría de agentes basados en modelo:
+     1) EVOLUCIÓN INDEPENDIENTE: cómo se mueve el fantasma aunque Pac-Man no
+        actúe. En vez de adivinar su rumbo extrapolando dos posiciones
+        (frágil: el fantasma cambia de dirección en cada pilar del
+        laberinto), el modelo SIMULA hacia adelante la regla de persecución
+        que ya conocemos (perseguirPacman), célula a célula, respetando las
+        paredes reales. Así obtenemos una trayectoria proyectada fiable.
+     2) CAUSALIDAD DE LA PROPIA ACCIÓN: al huir, Pac-Man se aleja de la
+        posición REAL del fantasma (no de la proyección). Huir de un punto
+        proyectado que converge hacia la propia posición de Pac-Man a
+        medida que el fantasma se acerca es una dirección degenerada (huir
+        "de uno mismo" no informa hacia dónde escapar). La proyección se usa
+        para decidir CUÁNDO reaccionar y para explicar la trayectoria en el
+        panel, no para fijar el vector de huida.
+   ========================================================================= */
+const DISTANCIA_PELIGRO_MODELO = 7;
+const PASOS_PREDICCION_MODELO = 3;
+
+// Simula "pasos" ciclos de la regla de persecución conocida del fantasma,
+// respetando el laberinto: es la "evolución independiente del entorno".
+function simularTrayectoriaFantasma(ghostPos, pacmanPos, pasos){
+  let sim = { r: ghostPos.r, c: ghostPos.c };
+  for (let i = 0; i < pasos; i++) {
+    const dirs = openDirsAt(sim);
+    const dir = perseguirPacman(sim, pacmanPos, dirs);
+    if (dir === 'stay') break;
+    sim = stepPos(sim, dir);
+  }
+  return sim;
+}
+
+function agenteModeloPacman(percepcion, estadoInterno){
+  const { pacmanPos, ghostPos, distFantasma, openDirs, nearestDotPos } = percepcion;
+
+  // 1) Actualizar el modelo: proyectar dónde estará el fantasma más cercano
+  //    dentro de PASOS_PREDICCION_MODELO ciclos, simulando su regla conocida.
+  const prediccion = ghostPos ? simularTrayectoriaFantasma(ghostPos, pacmanPos, PASOS_PREDICCION_MODELO) : null;
+  const distPrediccion = prediccion ? manhattan(pacmanPos, prediccion) : Infinity;
+  const distReal = ghostPos ? distFantasma : Infinity;
+
+  let accion, regla;
+  if (ghostPos && distReal <= DISTANCIA_PELIGRO_MODELO) {
+    // 2) Huir de la posición REAL del fantasma (vector de escape correcto).
+    //    La proyección ya sirvió para decidir "reaccionar ahora" incluso si
+    //    distReal apenas cruza el umbral; aquí solo fija hacia dónde escapar.
+    accion = elegirPasoAlejarse(pacmanPos, ghostPos, openDirs);
+    regla = 'Fantasma más cercano a ' + distReal + ' celdas (proyectado a ' + distPrediccion + ' en ' + PASOS_PREDICCION_MODELO + ' ciclos) → escape.';
+  } else if (nearestDotPos) {
+    accion = elegirPasoHacia(pacmanPos, nearestDotPos, openDirs);
+    regla = 'Sin amenaza real ni proyectada → avanzar hacia el punto más próximo.';
+  } else {
+    const dirs = Object.keys(openDirs).filter(d => openDirs[d]);
+    accion = dirs.length ? dirs[Math.floor(Math.random() * dirs.length)] : 'stay';
+    regla = 'Sin objetivo disponible → movimiento exploratorio.';
+  }
+
+  // 3) Actualizar el estado interno para el siguiente ciclo (memoria).
+  const nuevoEstado = {
+    prevGhostPos: ghostPos ? { r: ghostPos.r, c: ghostPos.c } : (estadoInterno && estadoInterno.prevGhostPos) || null,
+    prediccion,
+    pasos: (estadoInterno && estadoInterno.pasos || 0) + 1
+  };
+  return { accion, regla, nuevoEstado };
+}
+
+/* =========================================================================
+   ARQUITECTURA 3 — AGENTE BASADO EN OBJETIVOS (controla a Pac-Man)
+   Firma: agenteObjetivoPacman(percepcion) -> {accion, regla}
+
+   A diferencia del reflejo y el modelo (que solo comparan la distancia
+   Manhattan de UN paso hacia adelante), este agente PLANIFICA: usa
+   búsqueda en anchura (BFS, bfsPrimerPaso) sobre el laberinto real para
+   encontrar la ruta más corta hacia un objetivo, y recién entonces ejecuta
+   el primer paso de ese plan. Es la "simulación explícita de qué pasará si
+   hago esto, y esto, y esto..." de la teoría de agentes basados en
+   objetivos, en vez de reglas condición-acción de un solo paso.
+
+   El objetivo sigue siendo BINARIO (se alcanza o no se alcanza; no hay
+   noción de "qué tan buena" es una alternativa -- eso lo introduce recién
+   el agente basado en utilidad):
+     - En peligro: el objetivo es la celda alcanzable más lejana del
+       fantasma dentro de un radio de búsqueda (celdaEscapeMasLejana).
+     - Sin peligro: el objetivo es el punto de comida más cercano.
+   El laberinto ya es conocido por todas las arquitecturas (vive en "maze"),
+   así que planificar aquí no exige memoria adicional entre ciclos: lo que
+   distingue a este agente del reflejo/modelo es el ALGORITMO de decisión
+   (búsqueda vs. heurística de un paso), no la presencia de estadoInterno.
+   ========================================================================= */
+const DISTANCIA_PELIGRO_OBJETIVO = 6;
+const RADIO_PLAN_ESCAPE = 8;
+
+function agenteObjetivoPacman(percepcion){
+  const { pacmanPos, ghostPos, distFantasma, openDirs, nearestDotPos } = percepcion;
+
+  let objetivo = null, descripcionObjetivo = '';
+  if (ghostPos && distFantasma <= DISTANCIA_PELIGRO_OBJETIVO) {
+    objetivo = celdaEscapeMasLejana(pacmanPos, ghostPos, RADIO_PLAN_ESCAPE);
+    descripcionObjetivo = 'escapar hacia (' + objetivo.r + ',' + objetivo.c + '), la celda alcanzable más lejana del fantasma';
+  } else if (nearestDotPos) {
+    objetivo = nearestDotPos;
+    descripcionObjetivo = 'comer el punto en (' + objetivo.r + ',' + objetivo.c + ')';
+  }
+
+  if (objetivo) {
+    const paso = bfsPrimerPaso(pacmanPos, objetivo);
+    if (paso) return { accion: paso, regla: 'Objetivo: ' + descripcionObjetivo + ' → plan BFS, primer paso.' };
+  }
+
+  const dirs = Object.keys(openDirs).filter(d => openDirs[d]);
+  const accion = dirs.length ? dirs[Math.floor(Math.random() * dirs.length)] : 'stay';
+  return { accion, regla: 'Sin objetivo alcanzable → movimiento exploratorio.' };
+}
+
+/* =========================================================================
+   ARQUITECTURA 4 — AGENTE BASADO EN UTILIDAD (controla a Pac-Man)
+   Firma: agenteUtilidadPacman(percepcion) -> {accion, regla, utilidades}
+
+   A diferencia del agente basado en objetivos (que solo distingue "alcanzo
+   la meta o no"), este agente asigna a CADA dirección posible un número
+   continuo -- su utilidad -- combinando factores en tensión:
+     + acercarse al punto de comida más próximo (beneficio)
+     - acercarse a cualquier fantasma visible (costo que crece de forma
+       CUADRÁTICA cuanto más cerca está la amenaza: 1/(1+dist)^2)
+     + terminar en una celda con más salidas abiertas (beneficio leve, evita
+       arrinconarse)
+   y elige la dirección de MAYOR utilidad total. Así resuelve el trade-off
+   comida-vs-peligro de forma continua, sin un umbral de pánico fijo como
+   el reflejo (DISTANCIA_PELIGRO_REFLEJO) o el modelo.
+   ========================================================================= */
+const PESO_COMIDA = 1.0;
+const PESO_PELIGRO = 6.0;
+const PESO_ESPACIO = 0.15;
+
+function calcularUtilidad(celda, nearestDotPos, ghostsVisibles){
+  let utilidad = 0;
+  if (nearestDotPos) utilidad += PESO_COMIDA / (1 + manhattan(celda, nearestDotPos));
+  ghostsVisibles.forEach(g => { utilidad -= PESO_PELIGRO / Math.pow(1 + manhattan(celda, g), 2); });
+  const salidas = Object.values(openDirsAt(celda)).filter(Boolean).length;
+  utilidad += PESO_ESPACIO * salidas;
+  return utilidad;
+}
+
+function agenteUtilidadPacman(percepcion){
+  const { pacmanPos, openDirs, nearestDotPos, ghostsVisibles } = percepcion;
+
+  const candidatos = Object.keys(DIRS)
+    .filter(name => openDirs[name])
+    .map(name => {
+      const celda = stepPos(pacmanPos, name);
+      return { dir: name, utilidad: calcularUtilidad(celda, nearestDotPos, ghostsVisibles) };
+    });
+
+  if (candidatos.length === 0) return { accion: 'stay', regla: 'Sin movimientos posibles.', utilidades: [] };
+
+  candidatos.sort((a, b) => b.utilidad - a.utilidad);
+  const mejor = candidatos[0];
+  const resumen = candidatos.map(c => c.dir + '=' + c.utilidad.toFixed(2)).join('  ');
+  return { accion: mejor.dir, regla: 'Utilidad por dirección → ' + resumen + ' → elige ' + mejor.dir + '.', utilidades: candidatos };
+}
+
+/* =========================================================================
+   FANTASMA — estrategia fija de persecución (no forma parte de las
+   arquitecturas evaluadas). Siempre está activo, en cualquier modo,
+   incluido el manual: la comparación se centra en cómo Pac-Man reacciona
+   ante él, no en su propio comportamiento.
+   ========================================================================= */
+function perseguirPacman(ghostPos, pacmanPos, openDirs){
+  const opciones = [];
+  if (openDirs.up)    opciones.push({ dir: 'up',    dist: manhattan(stepPos(ghostPos, 'up'),    pacmanPos) });
+  if (openDirs.down)  opciones.push({ dir: 'down',  dist: manhattan(stepPos(ghostPos, 'down'),  pacmanPos) });
+  if (openDirs.left)  opciones.push({ dir: 'left',  dist: manhattan(stepPos(ghostPos, 'left'),  pacmanPos) });
+  if (openDirs.right) opciones.push({ dir: 'right', dist: manhattan(stepPos(ghostPos, 'right'), pacmanPos) });
+  if (opciones.length === 0) return 'stay';
+  opciones.sort((a, b) => a.dist - b.dist);
+  const mejor = opciones[0].dist;
+  const empatadas = opciones.filter(o => o.dist === mejor);
+  return empatadas[Math.floor(Math.random() * empatadas.length)].dir;
+}
+
+/* =========================================================================
+   PODERES — "recompensas" que se CANJEAN con los puntos que Pac-Man ya
+   recolectó comiendo puntos. No son parte de las 4 arquitecturas evaluadas:
+   son una capa de supervivencia disponible para CUALQUIERA que controle a
+   Pac-Man (jugador humano o cualquiera de los 4 agentes), para que la
+   comparación entre arquitecturas siga siendo justa (todas tienen acceso a
+   la misma capa de poderes).
+     ⚡ SALTO: cuesta COSTO_SALTO puntos. Mueve a Pac-Man 2 casillas de un
+       golpe en una sola dirección (si ambas casillas están libres de
+       muros), comiendo los puntos que haya en el camino. Entra en
+       reposo (cooldown) por COOLDOWN_SALTO ciclos tras usarse.
+     🛡 ESCUDO: cuesta COSTO_ESCUDO puntos. Mientras está activo, absorbe
+       UNA captura: en vez de terminar la partida, el escudo se rompe
+       (entra en cooldown) y Pac-Man es empujado lejos del fantasma que lo
+       atrapó, ganando una segunda oportunidad.
+   En modo manual el jugador los activa con teclas; en modo agente se
+   activan automáticamente con una heurística simple de peligro (distancia
+   al fantasma más cercano), reutilizando percepcion.distFantasma.
+   ========================================================================= */
+const COSTO_SALTO = 50;
+const COSTO_ESCUDO = 80;
+const COOLDOWN_SALTO = 15;
+const COOLDOWN_ESCUDO = 40;
+const DISTANCIA_ALERTA_PODERES = 3;
+
+// Intenta un salto de 2 casillas en "direccion". Devuelve true si se ejecutó.
+function intentarSalto(s, direccion){
+  if (s.saltoCooldown > 0 || s.score < COSTO_SALTO || direccion === 'stay') return false;
+  if (!canMove(s.pacman, direccion)) return false;
+  const paso1 = stepPos(s.pacman, direccion);
+  if (!canMove(paso1, direccion)) return false;
+  const paso2 = stepPos(paso1, direccion);
+  s.score -= COSTO_SALTO;
+  s.saltoCooldown = COOLDOWN_SALTO;
+  [paso1, paso2].forEach(p => {
+    const k = p.r + ',' + p.c;
+    if (s.dots.has(k)) { s.dots.delete(k); s.score += 10; }
+  });
+  s.pacman = { r: paso2.r, c: paso2.c, dir: direccion };
+  s.saltosUsados = (s.saltosUsados || 0) + 1;
+  return true;
+}
+
+// Compra el escudo si hay saldo y no hay uno ya activo ni en cooldown.
+function comprarEscudo(s){
+  if (s.escudoActivo || s.escudoCooldown > 0 || s.score < COSTO_ESCUDO) return false;
+  s.score -= COSTO_ESCUDO;
+  s.escudoActivo = true;
+  return true;
+}
+
+// Capa de poderes para los 4 agentes: heurística de peligro simple, igual
+// para todas las arquitecturas (no vive dentro de sus funciones).
+function gestionarPoderesAgente(s, percepcion){
+  const { pacmanPos, ghostPos, distFantasma, openDirs } = percepcion;
+  if (!ghostPos || distFantasma > DISTANCIA_ALERTA_PODERES) return;
+  if (comprarEscudo(s)) return; // prioridad: asegurar el escudo si se puede costear
+  const direccionFuga = elegirPasoAlejarse(pacmanPos, ghostPos, openDirs);
+  intentarSalto(s, direccionFuga);
+}
+
+/* =========================================================================
+   CICLO DE JUEGO (un "tick" = un ciclo percepción → decisión → acción)
+   Esta función es compartida por el juego interactivo y por las
+   simulaciones del experimento: opera solo sobre el objeto "s" recibido.
+   ========================================================================= */
+const TRAZA_MAX = 5;
+
+function doTick(s){
+  // 0. Enfriar los poderes (cooldown) cada ciclo, pase lo que pase.
+  if (s.saltoCooldown > 0) s.saltoCooldown--;
+  if (s.escudoCooldown > 0) s.escudoCooldown--;
+
+  // 1. Percepción de Pac-Man (se calcula siempre, incluso en modo manual,
+  //    para poder inspeccionar el entorno mientras se juega).
+  const percepcion = percibirPacman(s);
+  let accion = null, regla = '';
+
+  // 2. Decisión: quién mueve a Pac-Man según el modo activo.
+  if (s.mode === 'reflex') {
+    const res = agenteReflejoPacman(percepcion);
+    accion = res.accion; regla = res.regla;
+    s.pacNextDir = accion;
+  } else if (s.mode === 'model') {
+    const res = agenteModeloPacman(percepcion, s.modelEstado);
+    accion = res.accion; regla = res.regla;
+    s.modelEstado = res.nuevoEstado;
+    s.pacNextDir = accion;
+  } else if (s.mode === 'goal') {
+    const res = agenteObjetivoPacman(percepcion);
+    accion = res.accion; regla = res.regla;
+    s.pacNextDir = accion;
+  } else if (s.mode === 'utility') {
+    const res = agenteUtilidadPacman(percepcion);
+    accion = res.accion; regla = res.regla;
+    s.pacNextDir = accion;
+  }
+  // en modo manual, s.pacNextDir ya viene de las teclas del jugador
+
+  // 2b. Poderes: en modo manual, solo si el jugador presionó la tecla; en
+  //     modo agente, la heurística automática de gestionarPoderesAgente.
+  let saltoRealizado = false;
+  if (s.mode === 'manual') {
+    if (s.escudoKeyPressed) { comprarEscudo(s); s.escudoKeyPressed = false; }
+    if (s.saltoKeyPressed) { saltoRealizado = intentarSalto(s, s.pacman.dir); s.saltoKeyPressed = false; }
+  } else {
+    saltoRealizado = gestionarPoderesAgente(s, percepcion);
+  }
+
+  // 3-4. Mover a Pac-Man y comer punto — se omite si ya saltó este ciclo
+  //      (intentarSalto ya movió a Pac-Man y comió los puntos del camino).
+  //      Pac-Man se mueve en TODOS los ciclos (los fantasmas son más
+  //      lentos: solo se mueven cuando el ciclo es múltiplo de GHOST_MOVE_EVERY).
+  if (!saltoRealizado) {
+    let dir = s.pacNextDir;
+    if (dir !== 'stay' && !canMove(s.pacman, dir)) dir = s.pacman.dir;
+    if (dir !== 'stay' && canMove(s.pacman, dir)) {
+      const np = stepPos(s.pacman, dir);
+      s.pacman = { r: np.r, c: np.c, dir };
+    }
+    const key = s.pacman.r + ',' + s.pacman.c;
+    if (s.dots.has(key)) { s.dots.delete(key); s.score += 10; }
+  }
+
+  // 5. Turno de los fantasmas (siempre activos, estrategia fija, más lentos
+  //    que Pac-Man: solo se mueven cuando el ciclo es múltiplo de GHOST_MOVE_EVERY).
+  if (s.ticks % GHOST_MOVE_EVERY === 0) {
+    s.ghosts.forEach(g => {
+      const ghostOpenDirs = openDirsAt(g);
+      const ghostAccion = perseguirPacman(g, s.pacman, ghostOpenDirs);
+      if (ghostAccion !== 'stay' && canMove(g, ghostAccion)) {
+        const np = stepPos(g, ghostAccion);
+        g.r = np.r; g.c = np.c;
+      }
+    });
+  }
+
+  s.ticks++;
+  s.lastPercepcion = percepcion;
+  s.lastAction = accion;
+  s.lastRegla = regla;
+
+  // Traza de las últimas TRAZA_MAX decisiones (solo cuando hay un agente activo).
+  if (accion) {
+    s.trace.push({
+      tick: s.ticks,
+      percepcion: {
+        ghostPos: percepcion.ghostPos, distFantasma: percepcion.distFantasma,
+        nearestDotPos: percepcion.nearestDotPos
+      },
+      accion, regla
+    });
+    if (s.trace.length > TRAZA_MAX) s.trace.shift();
+  }
+
+  // 6. Condiciones de fin de partida
+  const fantasmaEncima = s.ghosts.find(g => g.r === s.pacman.r && g.c === s.pacman.c);
+  if (fantasmaEncima && s.escudoActivo) {
+    // El escudo absorbe la captura: se rompe, entra en cooldown, y empuja
+    // a Pac-Man lejos del fantasma que lo atrapó (segunda oportunidad).
+    s.escudoActivo = false;
+    s.escudoCooldown = COOLDOWN_ESCUDO;
+    const dirEmpuje = elegirPasoAlejarse(s.pacman, fantasmaEncima, openDirsAt(s.pacman));
+    if (dirEmpuje !== 'stay') {
+      const np = stepPos(s.pacman, dirEmpuje);
+      s.pacman = { r: np.r, c: np.c, dir: dirEmpuje };
+    }
+  } else if (fantasmaEncima) {
+    s.gameState = 'over';
+  } else if (s.dots.size === 0) {
+    s.gameState = 'win';
+  }
+}
+
+function createFreshState(mode){
+  return {
+    dots: buildDots(),
+    pacman: { r: PAC_START.r, c: PAC_START.c, dir: 'right' },
+    pacNextDir: 'right',
+    ghosts: GHOSTS_START.map(g => ({ r: g.r, c: g.c, id: g.id })),
+    score: 0, ticks: 0, mode, gameState: 'playing',
+    modelEstado: { prevGhostPos: null, prediccion: null, pasos: 0 },
+    lastPercepcion: null, lastAction: null, lastRegla: '', trace: [],
+    // Poderes (canjeados con los puntos de s.score): ver sección PODERES.
+    saltoCooldown: 0, escudoCooldown: 0, escudoActivo: false, saltosUsados: 0,
+    saltoKeyPressed: false, escudoKeyPressed: false
+  };
+}
+
+/* =========================================================================
+   ESTADO Y BUCLE DEL JUEGO INTERACTIVO
+   ========================================================================= */
+let state = createFreshState('manual');
+state.gameState = 'start';
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+function resetGame(mode){
+  state = createFreshState(mode);
+  document.getElementById('overlay').classList.add('hidden');
+  const btnPause = document.getElementById('btnPause');
+  btnPause.disabled = false;
+  btnPause.textContent = 'Pausar';
+  updateHud();
+  updateStatusPanel();
+}
+
+function drawMaze(){
+  ctx.fillStyle = COLORS.bg;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (maze[r][c] === 1) {
+        ctx.fillStyle = COLORS.wall;
+        ctx.fillRect(c * CELL, r * CELL, CELL, CELL);
+        ctx.strokeStyle = COLORS.wallEdge;
+        ctx.globalAlpha = 0.25;
+        ctx.strokeRect(c * CELL + 0.5, r * CELL + 0.5, CELL - 1, CELL - 1);
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+  ctx.fillStyle = COLORS.dot;
+  state.dots.forEach(key => {
+    const [r, c] = key.split(',').map(Number);
+    ctx.beginPath();
+    ctx.arc(c * CELL + CELL / 2, r * CELL + CELL / 2, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function drawPacman(){
+  const { r, c, dir } = state.pacman;
+  const x = c * CELL + CELL / 2, y = r * CELL + CELL / 2;
+  const mouthOpen = state.ticks % 2 === 0;
+  const angles = { right: 0, down: 90, left: 180, up: 270 };
+  const base = angles[dir] || 0;
+  ctx.fillStyle = COLORS.pac;
+  ctx.beginPath();
+  if (mouthOpen) {
+    ctx.moveTo(x, y);
+    ctx.arc(x, y, CELL / 2 - 1, (base + 35) * Math.PI / 180, (base + 325) * Math.PI / 180);
+  } else {
+    ctx.arc(x, y, CELL / 2 - 1, 0, Math.PI * 2);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawGhost(g, color){
+  const { r, c } = g;
+  const x = c * CELL + CELL / 2, y = r * CELL + CELL / 2;
+  const radius = CELL / 2 - 1;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(x, y - 2, radius, Math.PI, 0, false);
+  ctx.lineTo(x + radius, y + radius - 2);
+  const teeth = 3;
+  for (let i = 0; i < teeth; i++) {
+    const stepW = (radius * 2) / teeth;
+    const xi = x + radius - stepW * (i + 0.5);
+    ctx.lineTo(xi, y + radius - 6 - 2);
+    ctx.lineTo(xi - stepW / 2, y + radius - 2);
+  }
+  ctx.lineTo(x - radius, y + radius - 2);
+  ctx.closePath();
+  ctx.fill();
+  // ojos
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(x - 4, y - 3, 2.6, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + 4, y - 3, 2.6, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.arc(x - 4, y - 3, 1.1, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + 4, y - 3, 1.1, 0, Math.PI * 2); ctx.fill();
+}
+
+function draw(){
+  drawMaze();
+  drawPacman();
+  state.ghosts.forEach((g, i) => drawGhost(g, GHOST_COLORS[i % GHOST_COLORS.length]));
+}
+
+function updateHud(){
+  document.getElementById('scoreVal').textContent = state.score;
+  document.getElementById('dotsVal').textContent = state.dots.size;
+
+  const chipSalto = document.getElementById('chipSalto');
+  const saltoEstado = document.getElementById('saltoEstado');
+  if (state.saltoCooldown > 0) {
+    saltoEstado.textContent = 'recarga ' + state.saltoCooldown;
+    chipSalto.className = 'power-chip cooling';
+  } else if (state.score < COSTO_SALTO) {
+    saltoEstado.textContent = 'necesita ' + COSTO_SALTO + ' pts';
+    chipSalto.className = 'power-chip cooling';
+  } else {
+    saltoEstado.textContent = 'listo (' + COSTO_SALTO + ' pts)';
+    chipSalto.className = 'power-chip ready';
+  }
+
+  const chipEscudo = document.getElementById('chipEscudo');
+  const escudoEstado = document.getElementById('escudoEstado');
+  if (state.escudoActivo) {
+    escudoEstado.textContent = 'activo';
+    chipEscudo.className = 'power-chip active';
+  } else if (state.escudoCooldown > 0) {
+    escudoEstado.textContent = 'recarga ' + state.escudoCooldown;
+    chipEscudo.className = 'power-chip cooling';
+  } else if (state.score < COSTO_ESCUDO) {
+    escudoEstado.textContent = 'necesita ' + COSTO_ESCUDO + ' pts';
+    chipEscudo.className = 'power-chip cooling';
+  } else {
+    escudoEstado.textContent = 'listo (' + COSTO_ESCUDO + ' pts)';
+    chipEscudo.className = 'power-chip ready';
+  }
+}
+
+const MODE_LABELS = {
+  manual: 'Manual', reflex: 'Reflejo simple', model: 'Basado en modelo',
+  goal: 'Basado en objetivos', utility: 'Basado en utilidad'
+};
+
+function updateLiveSummary(){
+  document.getElementById('liveModo').textContent = MODE_LABELS[state.mode] || state.mode;
+  const accionTxt = state.mode === 'manual' ? (state.pacman.dir || '—') : (state.lastAction || '—');
+  document.getElementById('liveAccion').textContent = accionTxt;
+  document.getElementById('liveRegla').textContent =
+    state.mode === 'manual' ? 'Control manual por teclado.' : (state.lastRegla || 'Esperando el primer ciclo…');
+}
+
+function updateStatusPanel(){
+  const pEl = document.getElementById('statusPercepcion');
+  const vEl = document.getElementById('statusVentana');
+  const eEl = document.getElementById('statusEstado');
+  const aEl = document.getElementById('statusAccion');
+  const tEl = document.getElementById('statusTraza');
+
+  updateLiveSummary();
+  vEl.textContent = buildPerceptualWindow(state, VENTANA_RADIO);
+
+  if (!state.lastPercepcion) {
+    pEl.textContent = 'Esperando el primer ciclo…';
+  } else {
+    const p = state.lastPercepcion;
+    const listaFantasmas = p.ghostsVisibles.length
+      ? p.ghostsVisibles.map(g => g.id + '@(' + g.r + ',' + g.c + ') dist ' + g.dist).join(' | ')
+      : 'ninguno dentro del radio de percepción';
+    pEl.textContent =
+      'pacmanPos: ' + JSON.stringify(p.pacmanPos) + '\n' +
+      'fantasmas visibles: ' + listaFantasmas + '\n' +
+      'fantasma más cercano: ' + (p.ghostPos ? JSON.stringify(p.ghostPos) + ' (dist ' + p.distFantasma + ')' : 'no percibido') + '\n' +
+      'nearestDot: ' + JSON.stringify(p.nearestDotPos) + '\n' +
+      'dotsLeft: ' + p.dotsLeft + '\n' +
+      'openDirs: ' + JSON.stringify(p.openDirs);
+  }
+
+  if (state.mode === 'manual') {
+    eEl.textContent = 'Modo manual: tú controlas a Pac-Man. La percepción se calcula igual, para poder inspeccionar el entorno mientras juegas.';
+    aEl.textContent = 'Tecla presionada: ' + (state.pacman.dir || '—');
+    tEl.textContent = '—';
+    return;
+  }
+  const SIN_MEMORIA = {
+    reflex: 'No aplica: agenteReflejoPacman(percepcion) solo recibe un argumento — sin memoria entre ciclos.',
+    goal: 'No aplica: agenteObjetivoPacman(percepcion) tampoco recibe memoria. Planifica con BFS desde cero cada ciclo (el laberinto ya es conocido, no hace falta recordarlo).',
+    utility: 'No aplica: agenteUtilidadPacman(percepcion) tampoco recibe memoria. Recalcula la utilidad de cada dirección desde la percepción actual.'
+  };
+  if (state.mode === 'model') {
+    eEl.textContent = JSON.stringify(state.modelEstado, null, 2);
+  } else {
+    eEl.textContent = SIN_MEMORIA[state.mode] || '—';
+  }
+  aEl.textContent = (state.lastAction || '—') + (state.lastRegla ? '\n\n' + state.lastRegla : '');
+
+  tEl.textContent = state.trace.length
+    ? state.trace.map(t =>
+        '#' + t.tick + ' dist=' + (t.percepcion.distFantasma === Infinity ? '∞' : t.percepcion.distFantasma) +
+        ' → ' + t.accion + '\n   ' + t.regla
+      ).join('\n')
+    : 'Aún no hay decisiones registradas.';
+}
+
+function showOverlay(title, msg){
+  document.getElementById('overlayTitle').textContent = title;
+  document.getElementById('overlayMsg').textContent = msg;
+  document.getElementById('overlay').classList.remove('hidden');
+}
+
+let lastTime = 0, accumulator = 0;
+function frame(ts){
+  if (state.gameState === 'playing') {
+    const dt = ts - lastTime;
+    accumulator += dt;
+    while (accumulator >= TICK_MS && state.gameState === 'playing') {
+      doTick(state);
+      accumulator -= TICK_MS;
+      updateStatusPanel();
+    }
+    draw();
+    updateHud();
+    if (state.gameState === 'over') { showOverlay('¡ATRAPADO!', 'Puntaje final: ' + state.score + '. Presiona Iniciar para reintentar.'); document.getElementById('btnPause').disabled = true; }
+    if (state.gameState === 'win') { showOverlay('¡NIVEL SUPERADO!', 'Puntaje final: ' + state.score + '. Presiona Iniciar para jugar de nuevo.'); document.getElementById('btnPause').disabled = true; }
+  } else if (state.gameState === 'start' || state.gameState === 'paused') {
+    draw();
+  }
+  lastTime = ts;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+window.addEventListener('keydown', e => {
+  const map = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
+  if (map[e.key]) {
+    e.preventDefault();
+    if (state.gameState === 'playing' && state.mode === 'manual') state.pacNextDir = map[e.key];
+    return;
+  }
+  if (e.key === 'p' || e.key === 'P') {
+    e.preventDefault();
+    if (state.gameState === 'playing' || state.gameState === 'paused') document.getElementById('btnPause').click();
+    return;
+  }
+  if (state.gameState !== 'playing' || state.mode !== 'manual') return;
+  if (e.key === ' ') { e.preventDefault(); state.saltoKeyPressed = true; }
+  if (e.key === 'e' || e.key === 'E') { e.preventDefault(); state.escudoKeyPressed = true; }
+});
+
+document.querySelectorAll('input[name="mode"]').forEach(radio => {
+  radio.addEventListener('change', e => {
+    resetGame(e.target.value);
+    showOverlay('MODO: ' + e.target.value.toUpperCase(), 'Presiona Iniciar para comenzar.');
+  });
+});
+document.getElementById('btnStart').addEventListener('click', () => {
+  const mode = document.querySelector('input[name="mode"]:checked').value;
+  resetGame(mode);
+});
+
+document.getElementById('btnPause').addEventListener('click', () => {
+  const btnPause = document.getElementById('btnPause');
+  if (state.gameState === 'playing') {
+    state.gameState = 'paused';
+    showOverlay('PAUSADO', 'Presiona Reanudar (o la tecla P) para continuar.');
+    btnPause.textContent = 'Reanudar';
+  } else if (state.gameState === 'paused') {
+    state.gameState = 'playing';
+    document.getElementById('overlay').classList.add('hidden');
+    btnPause.textContent = 'Pausar';
+  }
+});
+
+document.getElementById('speedRange').addEventListener('input', e => {
+  const mult = parseFloat(e.target.value);
+  TICK_MS = BASE_TICK_MS / mult;
+  document.getElementById('speedVal').textContent = mult.toFixed(2) + 'x';
+});
+
+/* Pestañas del panel del agente: solo una sección visible a la vez. */
+document.getElementById('tabButtons').addEventListener('click', e => {
+  const btn = e.target.closest('.tab-btn');
+  if (!btn) return;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+  document.querySelectorAll('.tab-panel').forEach(p => { p.hidden = p.dataset.panel !== btn.dataset.tab; });
+});
+
+/* =========================================================================
+   EXPERIMENTACIÓN: 20 partidas aceleradas por cada arquitectura de agente
+   (el agente controla a Pac-Man; el fantasma persigue con su estrategia fija)
+   ========================================================================= */
+function mean(arr){ return arr.reduce((a, b) => a + b, 0) / arr.length; }
+function stdev(arr){
+  const m = mean(arr);
+  const variance = arr.reduce((a, b) => a + (b - m) * (b - m), 0) / arr.length;
+  return Math.sqrt(variance);
+}
+
+function simulateGames(mode, n){
+  const scores = [], ticksArr = [];
+  for (let i = 0; i < n; i++) {
+    const s = createFreshState(mode);
+    while (s.gameState === 'playing' && s.ticks < MAX_TICKS_SIM) {
+      doTick(s);
+    }
+    scores.push(s.score);
+    ticksArr.push(s.ticks);
+  }
+  return {
+    scores, ticksArr,
+    meanScore: mean(scores), stdScore: stdev(scores),
+    meanTicks: mean(ticksArr), stdTicks: stdev(ticksArr)
+  };
+}
+
+const AGENTES_EXPERIMENTO = [
+  { key: 'reflex', label: 'Refl.', cls: 'agent-reflex' },
+  { key: 'model', label: 'Mod.', cls: 'agent-model' },
+  { key: 'goal', label: 'Obj.', cls: 'agent-goal' },
+  { key: 'utility', label: 'Util.', cls: 'agent-utility' }
+];
+const METRICAS_EXPERIMENTO = [
+  { label: 'Puntaje prom.', get: r => r.meanScore },
+  { label: 'σ puntaje', get: r => r.stdScore },
+  { label: 'Superviv. prom.', get: r => r.meanTicks },
+  { label: 'σ superviv.', get: r => r.stdTicks }
+];
+
+function renderExperimentResults(resultados){
+  const box = document.getElementById('experimentResults');
+  const thead = '<tr><th>Métrica</th>' + AGENTES_EXPERIMENTO.map(a => '<th class="' + a.cls + '">' + a.label + '</th>').join('') + '</tr>';
+  const filas = METRICAS_EXPERIMENTO.map(m =>
+    '<tr><td>' + m.label + '</td>' + AGENTES_EXPERIMENTO.map(a => '<td>' + m.get(resultados[a.key]).toFixed(1) + '</td>').join('') + '</tr>'
+  ).join('');
+  box.innerHTML = `
+    <table class="results">
+      <thead>${thead}</thead>
+      <tbody>${filas}</tbody>
+    </table>
+    <p style="margin-top:8px; color: var(--text-dim); font-size:10.5px;">n=20 partidas/agente · Pac-Man es el agente, los 3 fantasmas persiguen siempre · tope ${MAX_TICKS_SIM} ciclos/partida. σ = desviación estándar.</p>
+  `;
+}
+
+document.getElementById('btnExperiment').addEventListener('click', () => {
+  const btn = document.getElementById('btnExperiment');
+  btn.disabled = true;
+  btn.textContent = 'Ejecutando…';
+  document.getElementById('experimentResults').textContent = 'Ejecutando… esto toma un instante (80 partidas).';
+  setTimeout(() => {
+    const resultados = {};
+    AGENTES_EXPERIMENTO.forEach(a => { resultados[a.key] = simulateGames(a.key, 20); });
+    renderExperimentResults(resultados);
+    btn.disabled = false;
+    btn.textContent = '20 partidas x agente';
+  }, 30);
+});
+
+// Estado inicial en pantalla
+document.getElementById('ghostEveryVal').textContent = GHOST_MOVE_EVERY;
+updateHud();
+updateStatusPanel();
+draw();
+
+/* =========================================================================
+   PAC-LAB · LABORATORIO DE BÚSQUEDA (subjuego DFS / BFS / A*)
+
+   Subjuego independiente del juego principal. El juego grande compara
+   ARQUITECTURAS de agente (AIMA cap. 1-2); este laboratorio compara
+   ALGORITMOS DE BÚSQUEDA (AIMA cap. 3) sobre un laberinto chico, con una
+   meta única y terreno de costo variable, para que el árbol de búsqueda
+   sea legible y la comparación tenga sentido.
+   ========================================================================= */
+
+const LAB_COLS = 13, LAB_ROWS = 9, LAB_CELL = 56;
+const LAB_COSTO_LODO = 3;
+// Orden en que se generan los sucesores. La pila de DFS saca el ÚLTIMO que
+// entró, así que DFS prueba primero 'right'; es lo que lo hace irse por el
+// camino largo en los niveles 1 y 4.
+const LAB_ORDEN_DIRS = ['up', 'down', 'left', 'right'];
+
+/* -------------------------------------------------------------------------
+   LOS 5 ESCENARIOS
+   '#' pared · '.' piso (costo 1) · '~' lodo (costo 3) · 'P' inicio · 'G' meta
+   Cada nivel aísla UN fenómeno, para que la tabla del informe se lea sola.
+   ------------------------------------------------------------------------- */
+const LAB_NIVELES = [
+  {
+    nombre: '1 · Pasillo',
+    estrella: false,
+    desc: 'La meta está justo debajo del inicio: seis pasos por el pasillo de la izquierda. Pero DFS genera los sucesores en orden y su pila saca el último, así que prueba primero <b>derecha</b> y se mete en el circuito largo. <b>Qué mirar:</b> BFS y A* devuelven el camino de 6 pasos; DFS devuelve uno larguísimo aunque expanda pocos nodos.',
+    mapa: [
+      '#############',
+      '#P....#.....#',
+      '#.###.#.###.#',
+      '#.#...#...#.#',
+      '#.#.#####.#.#',
+      '#.#.......#.#',
+      '#.#########.#',
+      '#G..........#',
+      '#############'
+    ]
+  },
+  {
+    nombre: '2 · Sala abierta',
+    estrella: false,
+    desc: 'Un cuarto casi sin paredes, con una mancha de lodo en el centro. Sin muros que la guíen, BFS crece en círculos y termina expandiendo casi todo el mapa; A* se estira hacia la meta y esquiva el lodo. <b>Qué mirar:</b> la diferencia de <b>nodos expandidos</b> — es el equivalente al Experimento 1 de la práctica.',
+    mapa: [
+      '#############',
+      '#P..........#',
+      '#...........#',
+      '#....~~~....#',
+      '#....~~~....#',
+      '#....~~~....#',
+      '#...........#',
+      '#..........G#',
+      '#############'
+    ]
+  },
+  {
+    nombre: '3 · Muro de lodo',
+    estrella: true,
+    desc: 'Dos pasillos paralelos bajan hasta la meta. El de la izquierda es <b>más corto en pasos</b> pero está lleno de lodo; el de la derecha es un paso más largo y está limpio. <b>Qué mirar:</b> BFS elige el corto y paga el triple; <b>BFS deja de ser óptimo</b>. Este es el escenario clave del informe — el equivalente al Experimento 2 con lodo.',
+    mapa: [
+      '#############',
+      '#P..........#',
+      '#~.########.#',
+      '#~.#......#.#',
+      '#~.#.####.#.#',
+      '#~.#.#..#.#.#',
+      '#~.#.#..#.#.#',
+      '#G.#.####.#.#',
+      '#############'
+    ]
+  },
+  {
+    nombre: '4 · Peine',
+    estrella: false,
+    desc: 'Un peine de callejones sin salida. La meta está seis pasos abajo, pero DFS se lanza hacia la derecha y da toda la vuelta. <b>Qué mirar:</b> DFS expande <b>pocos</b> nodos y aun así devuelve el camino más caro — expandir poco no es lo mismo que resolver bien. BFS expande casi todo el peine; A* baja recto.',
+    mapa: [
+      '#############',
+      '#P..........#',
+      '#.#.#.#.#.#.#',
+      '#.#.#.#.#.#.#',
+      '#.#.#.#.#.#.#',
+      '#.#.#.#.#.#.#',
+      '#.#.#.#.#.#.#',
+      '#G..........#',
+      '#############'
+    ]
+  },
+  {
+    nombre: '5 · Espiral',
+    estrella: false,
+    desc: 'Un corredor en espiral: casi no hay dónde elegir. <b>Qué mirar:</b> BFS y A* empatan en el mismo camino de costo 34 y A* apenas ahorra unas pocas expansiones, porque la heurística Manhattan apunta en línea recta hacia una meta que los muros obligan a rodear. Sirve para responder con honestidad que <b>A* no siempre gana por mucho</b>. DFS, en cambio, vuelve a pagar de más.',
+    mapa: [
+      '#############',
+      '#...........#',
+      '#.#########.#',
+      '#.#.......#.#',
+      '#.#.###.#.#.#',
+      '#.#.#G..#.#.#',
+      '#.#.#####.#.#',
+      '#P#.........#',
+      '#############'
+    ]
+  }
+];
+
+/* -------------------------------------------------------------------------
+   PARSEO DEL NIVEL
+   grid[r][c]: 0 piso · 1 pared · 2 lodo
+   ------------------------------------------------------------------------- */
+function labParsear(def){
+  const grid = [];
+  let inicio = null, meta = null;
+  for (let r = 0; r < LAB_ROWS; r++) {
+    const fila = [];
+    for (let c = 0; c < LAB_COLS; c++) {
+      const ch = def.mapa[r][c];
+      if (ch === '#') fila.push(1);
+      else if (ch === '~') fila.push(2);
+      else fila.push(0);
+      if (ch === 'P') inicio = { r, c };
+      if (ch === 'G') meta = { r, c };
+    }
+    grid.push(fila);
+  }
+  return { grid, inicio, meta, nombre: def.nombre, desc: def.desc, estrella: def.estrella };
+}
+const LAB_MAPAS = LAB_NIVELES.map(labParsear);
+
+function labCosto(grid, r, c){ return grid[r][c] === 2 ? LAB_COSTO_LODO : 1; }
+function labManhattan(a, b){ return Math.abs(a.r - b.r) + Math.abs(a.c - b.c); }
+
+/* -------------------------------------------------------------------------
+   EL MOTOR DE BÚSQUEDA — UNO SOLO PARA LOS TRES ALGORITMOS
+
+   Los tres son EXACTAMENTE el mismo bucle:
+       sacar un nodo de la frontera → ¿es la meta? → si no, expandir sucesores
+   Lo único que cambia es DE DÓNDE se saca el nodo:
+       DFS   → del final de la lista   (pila,  LIFO)
+       BFS   → del principio           (cola,  FIFO)
+       A*    → el de menor f = g + h   (cola de prioridad)
+   Devuelve además una TRAZA completa para poder animar y dibujar el grafo.
+   ------------------------------------------------------------------------- */
+function labBuscar(mapa, algo, limite, sinTraza){
+  const { grid, inicio, meta } = mapa;
+  const clave = (r, c) => r + ',' + c;
+  const MAX = limite || 4000;
+
+  const nodos = [];
+  const h0 = labManhattan(inicio, meta);
+  nodos.push({ id: 0, r: inicio.r, c: inicio.c, padre: -1, g: 0, h: h0, f: h0, prof: 0 });
+
+  let frontera = [0];
+  const enFrontera = { [clave(inicio.r, inicio.c)]: 0 }; // clave → id que está en la frontera
+  const expandidos = new Set();                          // claves ya expandidas
+  const mejorG = { [clave(inicio.r, inicio.c)]: 0 };
+  const traza = [];
+  let maxFrontera = 1, exito = false, metaId = -1, nExpandidos = 0;
+
+  // sinTraza = true corre el algoritmo puro, sin registrar la animación.
+  // Se usa solo para cronometrar: guardar la traza no es parte del algoritmo
+  // y falsearía la medición de tiempo.
+  while (frontera.length && nExpandidos < MAX) {
+    /* 1. Elegir qué nodo sale de la frontera: aquí y solo aquí se diferencian. */
+    let pos;
+    if (algo === 'dfs') {
+      pos = frontera.length - 1;                 // pila: el último que entró
+    } else if (algo === 'bfs') {
+      pos = 0;                                   // cola: el primero que entró
+    } else {
+      pos = 0;                                   // prioridad: el de menor f (desempate por menor h)
+      for (let i = 1; i < frontera.length; i++) {
+        const a = nodos[frontera[i]], b = nodos[frontera[pos]];
+        if (a.f < b.f || (a.f === b.f && a.h < b.h)) pos = i;
+      }
+    }
+
+    const fronteraAntes = sinTraza ? null : frontera.slice();
+    const id = frontera[pos];
+    const n = nodos[id];
+    frontera.splice(pos, 1);
+    delete enFrontera[clave(n.r, n.c)];
+    expandidos.add(clave(n.r, n.c));
+    nExpandidos++;
+
+    /* 2. Prueba de meta al expandir (igual para los tres, así son comparables). */
+    if (n.r === meta.r && n.c === meta.c) {
+      if (!sinTraza) traza.push({
+        nodoId: id, fronteraAntes, fronteraDespues: frontera.slice(),
+        nuevos: [], nodosCreados: nodos.length, esMeta: true
+      });
+      exito = true; metaId = id;
+      break;
+    }
+
+    /* 3. Expandir: generar los sucesores válidos. */
+    const nuevos = [];
+    for (const name of LAB_ORDEN_DIRS) {
+      const d = DIRS[name];
+      const nr = n.r + d.dr, nc = n.c + d.dc;
+      if (nr < 0 || nc < 0 || nr >= LAB_ROWS || nc >= LAB_COLS) continue;
+      if (grid[nr][nc] === 1) continue;
+      const k = clave(nr, nc);
+      if (expandidos.has(k)) continue;
+      const ng = n.g + labCosto(grid, nr, nc);
+
+      if (algo === 'astar') {
+        // A* admite reabrir una celda si encontró una forma más barata de llegar
+        // (esto es la operación "decrease-key" de la cola de prioridad).
+        if (k in mejorG && ng >= mejorG[k]) continue;
+        if (k in enFrontera) {
+          const viejo = enFrontera[k];
+          const iv = frontera.indexOf(viejo);
+          if (iv >= 0) frontera.splice(iv, 1);
+        }
+        mejorG[k] = ng;
+      } else {
+        // DFS y BFS: una celda se visita una sola vez (búsqueda en grafo).
+        if (k in enFrontera) continue;
+      }
+
+      const nh = labManhattan({ r: nr, c: nc }, meta);
+      const nuevo = { id: nodos.length, r: nr, c: nc, padre: id, g: ng, h: nh, f: ng + nh, prof: n.prof + 1 };
+      nodos.push(nuevo);
+      frontera.push(nuevo.id);
+      enFrontera[k] = nuevo.id;
+      nuevos.push(nuevo.id);
+    }
+
+    if (frontera.length > maxFrontera) maxFrontera = frontera.length;
+    if (!sinTraza) traza.push({
+      nodoId: id, fronteraAntes, fronteraDespues: frontera.slice(),
+      nuevos, nodosCreados: nodos.length, esMeta: false
+    });
+  }
+
+  /* 4. Reconstruir el camino siguiendo los punteros al padre. */
+  const camino = [];
+  if (exito) {
+    let cur = metaId;
+    while (cur !== -1) { camino.unshift(nodos[cur]); cur = nodos[cur].padre; }
+  }
+  return {
+    algo, exito, nodos, traza, camino,
+    costo: exito ? nodos[metaId].g : Infinity,
+    pasos: exito ? camino.length - 1 : 0,
+    expandidos: nExpandidos,
+    maxFrontera,
+    tiempoMs: null    // lo llena labMedirTiempo; una sola corrida no se puede cronometrar
+  };
+}
+
+/* -------------------------------------------------------------------------
+   MEDICIÓN DE TIEMPO
+
+   Estas búsquedas tardan decenas de microsegundos, pero performance.now()
+   en el navegador viene deliberadamente redondeado (unos 100 µs, como
+   defensa contra ataques de temporización). Cronometrar UNA corrida da 0 o
+   un número al azar: la regla es más gruesa que lo que se quiere medir.
+
+   Solución estándar: repetir la búsqueda hasta acumular un tiempo bastante
+   mayor que la resolución del reloj, y dividir. Con 12 ms acumulados, el
+   error del redondeo queda por debajo del 1 %.
+
+   Además se mide con sinTraza = true: guardar la animación paso a paso no
+   es parte del algoritmo y cuesta más que el algoritmo mismo.
+   ------------------------------------------------------------------------- */
+/* Resolución real del reloj: el salto más chico que se le puede ver.
+   Chrome ronda los 5 µs, Firefox redondea a 1 ms. Hay que conocerla para
+   saber cuán largo tiene que ser un lote de medición. */
+function labResolucionReloj(){
+  let min = Infinity;
+  for (let i = 0; i < 30; i++) {
+    const a = performance.now();
+    let b = a, vueltas = 0;
+    while (b === a && vueltas < 200000) { b = performance.now(); vueltas++; }
+    const d = b - a;
+    if (d > 0 && d < min) min = d;
+  }
+  return (isFinite(min) && min > 0) ? min : 1;
+}
+const LAB_RES_RELOJ = labResolucionReloj();
+
+// Un lote debe durar MUCHO más que la resolución del reloj para que el
+// redondeo no pese: apuntamos a unos 200 "tics" de reloj, con piso y techo.
+const LAB_MS_LOTE = Math.min(30, Math.max(10, LAB_RES_RELOJ * 200));
+// Presupuesto total acotado, para que la interfaz no se trabe.
+const LAB_LOTES = Math.max(3, Math.round(60 / LAB_MS_LOTE));
+
+function labMedirTiempo(mapa, algo){
+  const correr = n => { for (let i = 0; i < n; i++) labBuscar(mapa, algo, undefined, true); };
+
+  // 1. Calentamiento: las primeras corridas pagan la compilación del motor
+  //    de JavaScript y serían artificialmente lentas.
+  correr(50);
+
+  // 2. Calibración: cuántas repeticiones entran en un lote del tamaño buscado.
+  //    Así el reloj se consulta DOS veces por lote y no una vez por corrida
+  //    (consultarlo es casi tan caro como la búsqueda misma).
+  let reps = 32;
+  for (let intento = 0; intento < 40; intento++) {
+    const t0 = performance.now();
+    correr(reps);
+    const dt = performance.now() - t0;
+    if (dt >= LAB_MS_LOTE) break;
+    const factor = dt > 0 ? (LAB_MS_LOTE / dt) * 1.25 : 4;
+    reps = Math.min(2000000, Math.max(reps + 1, Math.ceil(reps * Math.min(factor, 8))));
+  }
+
+  // 3. Varios lotes, y nos quedamos con el MÍNIMO. El ruido (recolección de
+  //    basura, el sistema operativo interrumpiendo, otra pestaña) solo puede
+  //    AÑADIR tiempo, nunca quitarlo: el lote más rápido es el más limpio.
+  let mejor = Infinity, peor = 0, total = 0;
+  for (let k = 0; k < LAB_LOTES; k++) {
+    const t0 = performance.now();
+    correr(reps);
+    const dt = performance.now() - t0;
+    total += dt;
+    if (dt < mejor) mejor = dt;
+    if (dt > peor) peor = dt;
+  }
+
+  return {
+    ms: mejor / reps,
+    reps, lotes: LAB_LOTES, acumuladoMs: total,
+    ruidoPct: mejor > 0 ? (peor - mejor) / mejor * 100 : 0
+  };
+}
+
+/* Búsqueda completa (con traza) más un tiempo medido en serio. */
+function labBuscarMedido(mapa, algo){
+  const r = labBuscar(mapa, algo);
+  const m = labMedirTiempo(mapa, algo);
+  r.tiempoMs = m.ms;
+  r.repsMedicion = m.reps;
+  return r;
+}
+
+/* A esta escala los milisegundos se leen mal: 0.03 ms es más claro como 30 µs. */
+function labFmtTiempo(ms){
+  if (ms === null || ms === undefined) return '—';
+  if (ms < 1) return (ms * 1000).toFixed(1) + ' µs';
+  return ms.toFixed(3) + ' ms';
+}
+
+/* Costo óptimo real (búsqueda de costo uniforme / Dijkstra). Se usa solo para
+   poder marcar con honestidad la columna "¿Óptimo?" de las tablas. */
+function labCostoOptimo(mapa){
+  const { grid, inicio, meta } = mapa;
+  const dist = {};
+  const k0 = inicio.r + ',' + inicio.c;
+  dist[k0] = 0;
+  let pend = [{ r: inicio.r, c: inicio.c, g: 0 }];
+  while (pend.length) {
+    let bi = 0;
+    for (let i = 1; i < pend.length; i++) if (pend[i].g < pend[bi].g) bi = i;
+    const n = pend.splice(bi, 1)[0];
+    if (n.r === meta.r && n.c === meta.c) return n.g;
+    if (n.g > (dist[n.r + ',' + n.c] ?? Infinity)) continue;
+    for (const name of LAB_ORDEN_DIRS) {
+      const d = DIRS[name];
+      const nr = n.r + d.dr, nc = n.c + d.dc;
+      if (nr < 0 || nc < 0 || nr >= LAB_ROWS || nc >= LAB_COLS) continue;
+      if (grid[nr][nc] === 1) continue;
+      const ng = n.g + labCosto(grid, nr, nc);
+      const k = nr + ',' + nc;
+      if (ng < (dist[k] ?? Infinity)) { dist[k] = ng; pend.push({ r: nr, c: nc, g: ng }); }
+    }
+  }
+  return Infinity;
+}
+const LAB_OPTIMOS = LAB_MAPAS.map(labCostoOptimo);
+
+/* =========================================================================
+   SONIDO — sintetizado con la Web Audio API (sin archivos externos)
+   ========================================================================= */
+const LabAudio = (function(){
+  let ctx = null, encendido = true, ultimoBlip = 0, wakaAlterna = false;
+  try { encendido = localStorage.getItem('paclabSonido') !== 'off'; } catch(e){}
+
+  function ac(){
+    if (!ctx) {
+      try { ctx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch(e){ return null; }
+    }
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+  function tono(freq, dur, tipo, vol, retraso){
+    if (!encendido) return;
+    const a = ac(); if (!a) return;
+    const t = a.currentTime + (retraso || 0);
+    const osc = a.createOscillator(), gan = a.createGain();
+    osc.type = tipo || 'square';
+    osc.frequency.setValueAtTime(freq, t);
+    gan.gain.setValueAtTime(0.0001, t);
+    gan.gain.exponentialRampToValueAtTime(vol || 0.05, t + 0.008);
+    gan.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(gan); gan.connect(a.destination);
+    osc.start(t); osc.stop(t + dur + 0.02);
+  }
+  function barrido(f1, f2, dur, vol){
+    if (!encendido) return;
+    const a = ac(); if (!a) return;
+    const t = a.currentTime;
+    const osc = a.createOscillator(), gan = a.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(f1, t);
+    osc.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    gan.gain.setValueAtTime(vol || 0.05, t);
+    gan.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(gan); gan.connect(a.destination);
+    osc.start(t); osc.stop(t + dur + 0.02);
+  }
+  return {
+    activo(){ return encendido; },
+    alternar(){
+      encendido = !encendido;
+      try { localStorage.setItem('paclabSonido', encendido ? 'on' : 'off'); } catch(e){}
+      if (encendido) tono(660, 0.09, 'square', 0.05);
+      return encendido;
+    },
+    despertar(){ ac(); },
+    // un blip por nodo expandido, con la altura subiendo según la profundidad
+    expandir(prof){
+      const ahora = performance.now();
+      if (ahora - ultimoBlip < 40) return;
+      ultimoBlip = ahora;
+      tono(190 + Math.min(prof, 30) * 16, 0.045, 'square', 0.028);
+    },
+    // waka-waka mientras Pac-Man recorre el camino
+    paso(){
+      wakaAlterna = !wakaAlterna;
+      tono(wakaAlterna ? 440 : 300, 0.06, 'square', 0.05);
+    },
+    lodo(){ tono(90, 0.14, 'sawtooth', 0.05); },
+    encontrado(){
+      tono(523, 0.09, 'square', 0.055, 0);
+      tono(659, 0.09, 'square', 0.055, 0.09);
+      tono(784, 0.09, 'square', 0.055, 0.18);
+      tono(1047, 0.18, 'square', 0.06, 0.27);
+    },
+    fallo(){ barrido(300, 90, 0.4, 0.06); },
+    abrir(){
+      tono(392, 0.07, 'square', 0.05, 0);
+      tono(523, 0.07, 'square', 0.05, 0.07);
+      tono(659, 0.14, 'square', 0.055, 0.14);
+    },
+    largada(){
+      tono(440, 0.1, 'square', 0.05, 0);
+      tono(440, 0.1, 'square', 0.05, 0.22);
+      tono(880, 0.22, 'square', 0.06, 0.44);
+    },
+    ganador(){
+      tono(659, 0.1, 'square', 0.055, 0);
+      tono(784, 0.1, 'square', 0.055, 0.1);
+      tono(1047, 0.1, 'square', 0.055, 0.2);
+      tono(1319, 0.25, 'square', 0.06, 0.3);
+    }
+  };
+})();
+
+/* =========================================================================
+   EXPLICACIÓN DE CADA ALGORITMO (panel "Cómo decide")
+   ========================================================================= */
+const LAB_EXPLICACION = {
+  dfs: {
+    titulo: 'DFS · Búsqueda en profundidad',
+    color: 'var(--ghost1)',
+    html: `
+      <p><b>Estructura:</b> una <b>pila (LIFO)</b>. Saca siempre el <b>último</b> nodo que entró.</p>
+      <p><b>Cómo se comporta:</b> se lanza por un pasillo y no vuelve hasta chocar contra un callejón sin salida. No mira ni la distancia ni el costo del terreno: solo sigue adelante.</p>
+      <p><b>¿Devuelve el camino más barato?</b> <b style="color:var(--ghost1)">No.</b> Devuelve el primero que encuentra, y suele ser malísimo.</p>
+      <p><b>Lo bueno:</b> en pasillos angostos gasta muy poca memoria. Comprobalo con el contador <b>Máx. frontera</b>: en los niveles 1, 3 y 5 la pila casi no crece (2 a 4 nodos). Pero <b>ojo</b>, en la sala abierta del nivel 2 se le llena hasta 31 — más que la cola de BFS. La ventaja de memoria de DFS es real en árboles profundos y angostos, no en cualquier mapa.</p>`
+  },
+  bfs: {
+    titulo: 'BFS · Búsqueda en anchura',
+    color: 'var(--wall-edge)',
+    html: `
+      <p><b>Estructura:</b> una <b>cola (FIFO)</b>. Saca siempre el <b>primero</b> que entró, o sea el más superficial.</p>
+      <p><b>Cómo se comporta:</b> crece en círculos concéntricos alrededor del inicio. Explora por niveles: primero todo lo que está a 1 paso, después todo lo que está a 2, y así.</p>
+      <p><b>¿Devuelve el camino más barato?</b> <b style="color:var(--pac)">Solo si todos los pasos cuestan igual.</b> BFS minimiza <b>pasos</b>, no <b>costo</b>: con lodo de por medio elige la ruta corta y cara. Probalo en el nivel 3.</p>
+      <p><b>Lo malo:</b> como no sabe dónde está la meta, explora igual en todas las direcciones y expande muchísimos nodos.</p>`
+  },
+  astar: {
+    titulo: 'A* · Búsqueda informada',
+    color: 'var(--pac)',
+    html: `
+      <p><b>Estructura:</b> una <b>cola de prioridad</b>. Saca el nodo de menor <code>f = g + h</code>.</p>
+      <p><b>Qué son esos números:</b> <code>g</code> es el costo <b>ya gastado</b> para llegar a esa celda; <code>h</code> es la <b>estimación</b> de lo que falta (distancia Manhattan a la meta); <code>f</code> es el costo total estimado del camino que pasa por ahí.</p>
+      <p><b>Cómo se comporta:</b> la exploración se <b>estira hacia la meta</b> en vez de crecer pareja, porque los nodos que apuntan en la dirección correcta tienen <code>f</code> más chico.</p>
+      <p><b>¿Devuelve el camino más barato?</b> <b style="color:var(--ok)">Sí</b>, mientras <code>h</code> nunca sobreestime. Manhattan no puede sobreestimar: ignora paredes y supone que todo cuesta 1, que es el mínimo posible.</p>`
+  }
+};
+
+/* =========================================================================
+   ESTADO DEL LABORATORIO
+   ========================================================================= */
+const LAB_ALGOS = [
+  { key: 'dfs',   etiqueta: 'DFS', color: '#ff3b5c' },
+  { key: 'bfs',   etiqueta: 'BFS', color: '#3f9dff' },
+  { key: 'astar', etiqueta: 'A*',  color: '#ffd23f' }
+];
+
+let labNivel = 2;             // arranca en el nivel del lodo, que es el interesante
+let labAlgo = 'astar';
+let labRes = null;            // resultado de labBuscar del nivel+algoritmo actual
+let labPaso = -1;             // -1 = todavía no empezó; 0..traza.length-1
+let labTimer = null;          // intervalo de reproducción de la búsqueda
+let labEjec = null;           // animación de Pac-Man recorriendo el camino
+let labApuesta = null;
+
+const LCanvas = document.getElementById('labCanvas');
+const LCtx = LCanvas.getContext('2d');
+
+/* =========================================================================
+   DIBUJO DEL LABERINTO
+   ========================================================================= */
+function labColorCalor(t){
+  // orden de expansión: azul frío (primeros) → naranja (últimos)
+  const hue = 205 - 175 * Math.max(0, Math.min(1, t));
+  return 'hsl(' + hue.toFixed(0) + ', 68%, 40%)';
+}
+
+function labDibujarPac(ctx, x, y, rad, dir, boca){
+  const ang = { right: 0, down: 90, left: 180, up: 270 }[dir] || 0;
+  ctx.fillStyle = '#ffd23f';
+  ctx.beginPath();
+  if (boca) {
+    ctx.moveTo(x, y);
+    ctx.arc(x, y, rad, (ang + 33) * Math.PI / 180, (ang + 327) * Math.PI / 180);
+  } else {
+    ctx.arc(x, y, rad, 0, Math.PI * 2);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+function labDibujarFantasma(ctx, x, y, rad, color, panico){
+  ctx.fillStyle = panico ? '#3f6bff' : color;
+  ctx.beginPath();
+  ctx.arc(x, y - rad * 0.12, rad, Math.PI, 0, false);
+  ctx.lineTo(x + rad, y + rad * 0.8);
+  const dientes = 3, paso = (rad * 2) / dientes;
+  for (let i = 0; i < dientes; i++) {
+    const xi = x + rad - paso * (i + 0.5);
+    ctx.lineTo(xi, y + rad * 0.42);
+    ctx.lineTo(xi - paso / 2, y + rad * 0.8);
+  }
+  ctx.lineTo(x - rad, y + rad * 0.8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(x - rad * 0.35, y - rad * 0.2, rad * 0.26, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + rad * 0.35, y - rad * 0.2, rad * 0.26, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.arc(x - rad * 0.35, y - rad * 0.2, rad * 0.12, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + rad * 0.35, y - rad * 0.2, rad * 0.12, 0, Math.PI * 2); ctx.fill();
+}
+
+/* Dibuja un nivel completo en cualquier canvas y a cualquier escala.
+   opts: { paso, res, verF, verPadres, verFrontera, pacPos, mini } */
+function labDibujarMapa(ctx, mapa, cell, opts){
+  const o = opts || {};
+  const { grid, inicio, meta } = mapa;
+  const W = LAB_COLS * cell, H = LAB_ROWS * cell;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#070a13';
+  ctx.fillRect(0, 0, W, H);
+
+  // --- terreno ---
+  for (let r = 0; r < LAB_ROWS; r++) {
+    for (let c = 0; c < LAB_COLS; c++) {
+      const x = c * cell, y = r * cell;
+      if (grid[r][c] === 1) {
+        ctx.fillStyle = '#2b3a67';
+        ctx.fillRect(x, y, cell, cell);
+        ctx.strokeStyle = 'rgba(63,157,255,.22)';
+        ctx.strokeRect(x + 0.5, y + 0.5, cell - 1, cell - 1);
+      } else if (grid[r][c] === 2) {
+        ctx.fillStyle = '#5a3d22';
+        ctx.fillRect(x, y, cell, cell);
+        ctx.fillStyle = 'rgba(0,0,0,.28)';
+        for (let i = 0; i < 4; i++) {
+          const px = x + ((i * 37) % (cell - 6)) + 3;
+          const py = y + ((i * 61) % (cell - 6)) + 3;
+          ctx.fillRect(px, py, 3, 2);
+        }
+      } else {
+        ctx.fillStyle = '#0e1424';
+        ctx.fillRect(x, y, cell, cell);
+      }
+      ctx.strokeStyle = 'rgba(255,255,255,.03)';
+      ctx.strokeRect(x + 0.5, y + 0.5, cell - 1, cell - 1);
+    }
+  }
+
+  const res = o.res, paso = o.paso;
+  if (res && paso >= 0) {
+    const total = res.traza.length;
+    const expandidos = new Map();  // clave → { orden, nodo }
+    for (let i = 0; i <= paso && i < total; i++) {
+      const n = res.nodos[res.traza[i].nodoId];
+      expandidos.set(n.r + ',' + n.c, { orden: i, nodo: n });
+    }
+
+    // --- celdas expandidas, coloreadas por orden ---
+    expandidos.forEach(({ orden, nodo }) => {
+      const x = nodo.c * cell, y = nodo.r * cell;
+      ctx.globalAlpha = 0.62;
+      ctx.fillStyle = labColorCalor(total > 1 ? orden / (total - 1) : 0);
+      ctx.fillRect(x + 1, y + 1, cell - 2, cell - 2);
+      ctx.globalAlpha = 1;
+    });
+
+    // --- flechas hacia el padre: el árbol dibujado sobre el propio mapa ---
+    if (o.verPadres && cell >= 30) {
+      ctx.strokeStyle = 'rgba(255,255,255,.42)';
+      ctx.lineWidth = 1.6;
+      expandidos.forEach(({ nodo }) => {
+        if (nodo.padre < 0) return;
+        const p = res.nodos[nodo.padre];
+        const x1 = nodo.c * cell + cell / 2, y1 = nodo.r * cell + cell / 2;
+        const x2 = p.c * cell + cell / 2, y2 = p.r * cell + cell / 2;
+        const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len, uy = dy / len;
+        ctx.beginPath();
+        ctx.moveTo(x1 + ux * cell * 0.16, y1 + uy * cell * 0.16);
+        ctx.lineTo(x1 + ux * cell * 0.40, y1 + uy * cell * 0.40);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(x1 + ux * cell * 0.40, y1 + uy * cell * 0.40, 2, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,.5)';
+        ctx.fill();
+      });
+      ctx.lineWidth = 1;
+    }
+
+    // --- frontera ---
+    const tr = res.traza[Math.min(paso, total - 1)];
+    if (o.verFrontera && tr) {
+      ctx.strokeStyle = '#28e0e0';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 3]);
+      tr.fronteraDespues.forEach(id => {
+        const n = res.nodos[id];
+        ctx.globalAlpha = 0.20;
+        ctx.fillStyle = '#28e0e0';
+        ctx.fillRect(n.c * cell + 2, n.r * cell + 2, cell - 4, cell - 4);
+        ctx.globalAlpha = 1;
+        ctx.strokeRect(n.c * cell + 2.5, n.r * cell + 2.5, cell - 5, cell - 5);
+      });
+      ctx.setLineDash([]);
+      ctx.lineWidth = 1;
+    }
+
+    // --- números g / h / f ---
+    if (o.verF && cell >= 40) {
+      ctx.textAlign = 'center';
+      expandidos.forEach(({ nodo }) => {
+        const x = nodo.c * cell, y = nodo.r * cell;
+        ctx.fillStyle = 'rgba(255,255,255,.95)';
+        ctx.font = 'bold 13px "Courier New", monospace';
+        ctx.fillText(labAlgo === 'astar' ? String(nodo.f) : String(nodo.g), x + cell / 2, y + cell / 2 + 5);
+        ctx.font = '9px "Courier New", monospace';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = 'rgba(160,255,220,.9)';
+        ctx.fillText('g' + nodo.g, x + 3, y + 11);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = 'rgba(255,190,120,.9)';
+        ctx.fillText('h' + nodo.h, x + cell - 3, y + 11);
+        ctx.textAlign = 'center';
+      });
+      ctx.textAlign = 'left';
+    }
+
+    // --- nodo que se está expandiendo AHORA ---
+    if (tr) {
+      const n = res.nodos[tr.nodoId];
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(n.c * cell + 2, n.r * cell + 2, cell - 4, cell - 4);
+      ctx.lineWidth = 1;
+    }
+
+    // --- camino final, cuando la búsqueda ya terminó ---
+    if (paso >= total - 1 && res.exito && res.camino.length > 1) {
+      ctx.strokeStyle = '#ffd23f';
+      ctx.lineWidth = Math.max(3, cell * 0.11);
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      res.camino.forEach((n, i) => {
+        const x = n.c * cell + cell / 2, y = n.r * cell + cell / 2;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      ctx.lineWidth = 1;
+    }
+  }
+
+  // --- meta y salida ---
+  const mx = meta.c * cell + cell / 2, my = meta.r * cell + cell / 2;
+  labDibujarFantasma(ctx, mx, my, cell * 0.36, '#3f6bff', true);
+
+  const pac = o.pacPos || inicio;
+  const px = pac.c * cell + cell / 2, py = pac.r * cell + cell / 2;
+  labDibujarPac(ctx, px, py, cell * 0.36, o.pacDir || 'right', o.pacBoca !== false);
+}
+
+/* =========================================================================
+   PANEL DE FRONTERA — la estructura de datos dibujada tal cual es
+   ========================================================================= */
+function labRenderFrontera(){
+  const caja = document.getElementById('labFrontera');
+  const nota = document.getElementById('labFronteraNota');
+  const extremos = document.getElementById('labFronteraExtremos');
+  const titulo = document.getElementById('labFronteraTitulo');
+  if (!labRes) { caja.innerHTML = ''; return; }
+
+  // La frontera que se muestra es la ACTUAL (después del paso hecho), y la
+  // flecha ▶ marca el nodo que el algoritmo va a expandir en el paso siguiente:
+  // así se ve la regla de selección antes de que ocurra.
+  const idx = Math.max(0, Math.min(labPaso, labRes.traza.length - 1));
+  const lista = labPaso < 0 ? labRes.traza[0].fronteraAntes : labRes.traza[idx].fronteraDespues;
+  const sig = labPaso + 1;
+  const elegido = sig < labRes.traza.length ? labRes.traza[sig].nodoId : -1;
+
+  let clase, textoNota, izq, der;
+  if (labAlgo === 'dfs') {
+    titulo.textContent = 'Frontera · Pila (LIFO)';
+    clase = 'pila';
+    textoNota = 'Entra y sale por el TOPE. El próximo en salir (▶) es el último que entró.';
+    izq = '▲ arriba está el tope de la pila'; der = '';
+  } else if (labAlgo === 'bfs') {
+    titulo.textContent = 'Frontera · Cola (FIFO)';
+    clase = 'cola';
+    textoNota = 'Entra por la derecha, sale por la izquierda. El próximo en salir (▶) es el más antiguo.';
+    izq = '◀ sale de acá'; der = 'entra acá ▶';
+  } else {
+    titulo.textContent = 'Frontera · Cola de prioridad';
+    clase = 'lista-f';
+    textoNota = 'Ordenada por f = g + h. El próximo en salir (▶) es el de f más chico, esté donde esté.';
+    izq = '▲ arriba está el de menor f'; der = '';
+  }
+  nota.textContent = textoNota;
+  extremos.innerHTML = '<span>' + izq + '</span><span>' + der + '</span>';
+
+  // Para la pila mostramos el tope arriba; para la cola de prioridad, ordenada por f.
+  let orden = lista.slice();
+  if (labAlgo === 'dfs') orden.reverse();
+  if (labAlgo === 'astar') {
+    orden.sort((a, b) => {
+      const na = labRes.nodos[a], nb = labRes.nodos[b];
+      return na.f - nb.f || na.h - nb.h;
+    });
+  }
+
+  const html = orden.map(id => {
+    const n = labRes.nodos[id];
+    const sel = id === elegido ? ' elegido' : '';
+    const detalle = labAlgo === 'astar'
+      ? '<span class="fv">f' + n.f + '</span><span>g' + n.g + ' h' + n.h + '</span>'
+      : (labAlgo === 'bfs' ? '<span>g' + n.g + '</span>' : '<span>p' + n.prof + '</span>');
+    return '<div class="nodo-f' + sel + '"><span class="pos">(' + n.r + ',' + n.c + ')</span>' + detalle + '</div>';
+  }).join('');
+
+  caja.className = 'frontera-caja ' + clase;
+  caja.innerHTML = html || '<div class="nodo-f">(vacía)</div>';
+}
+
+/* =========================================================================
+   EL GRAFO — árbol de búsqueda en SVG, creciendo nodo a nodo
+   ========================================================================= */
+const LAB_GRAFO_MAX = 90;
+
+function labRenderGrafo(){
+  const caja = document.getElementById('labGrafo');
+  const nota = document.getElementById('labGrafoNota');
+  if (!labRes) { caja.innerHTML = ''; return; }
+
+  const idx = Math.max(0, Math.min(labPaso, labRes.traza.length - 1));
+  const creados = labPaso < 0 ? 1 : labRes.traza[idx].nodosCreados;
+  const limite = Math.min(creados, LAB_GRAFO_MAX);
+  nota.innerHTML = creados > LAB_GRAFO_MAX
+    ? 'Mostrando los primeros <b>' + LAB_GRAFO_MAX + '</b> de <b>' + creados + '</b> nodos generados, para que se siga leyendo.'
+    : 'Nodos generados hasta ahora: <b>' + creados + '</b>.';
+
+  const visibles = new Set();
+  for (let i = 0; i < limite; i++) visibles.add(i);
+
+  // hijos por padre
+  const hijos = {};
+  for (let i = 1; i < limite; i++) {
+    const p = labRes.nodos[i].padre;
+    if (visibles.has(p)) (hijos[p] = hijos[p] || []).push(i);
+  }
+  // layout: hojas en columnas consecutivas, padres centrados sobre sus hijos
+  const pos = {};
+  let libre = 0;
+  (function ubicar(id){
+    const hs = hijos[id] || [];
+    if (!hs.length) { pos[id] = { x: libre++, y: labRes.nodos[id].prof }; return pos[id].x; }
+    const xs = hs.map(ubicar);
+    pos[id] = { x: (xs[0] + xs[xs.length - 1]) / 2, y: labRes.nodos[id].prof };
+    return pos[id].x;
+  })(0);
+
+  const SX = 46, SY = 66, R = 15, MX = 30, MY = 28;
+  let maxX = 0, maxY = 0;
+  Object.values(pos).forEach(p => { if (p.x > maxX) maxX = p.x; if (p.y > maxY) maxY = p.y; });
+  const W = maxX * SX + MX * 2 + R * 2, H = maxY * SY + MY * 2 + R * 2;
+
+  // conjuntos de estado
+  const expandidosIds = new Set();
+  for (let i = 0; i <= idx && labPaso >= 0 && i < labRes.traza.length; i++) expandidosIds.add(labRes.traza[i].nodoId);
+  const tr = labRes.traza[idx];
+  const enFrontera = new Set(labPaso < 0 ? tr.fronteraAntes : tr.fronteraDespues);
+  const actual = labPaso < 0 ? -1 : tr.nodoId;
+  const terminado = labPaso >= labRes.traza.length - 1;
+  const enCamino = new Set(terminado && labRes.exito ? labRes.camino.map(n => n.id) : []);
+  const total = labRes.traza.length;
+  const ordenDe = {};
+  for (let i = 0; i <= idx && labPaso >= 0 && i < total; i++) ordenDe[labRes.traza[i].nodoId] = i;
+
+  let svg = '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">';
+  const cx = id => MX + R + pos[id].x * SX;
+  const cy = id => MY + R + pos[id].y * SY;
+
+  // aristas
+  for (let i = 1; i < limite; i++) {
+    const p = labRes.nodos[i].padre;
+    if (!visibles.has(p)) continue;
+    const dorada = enCamino.has(i) && enCamino.has(p);
+    svg += '<line x1="' + cx(p) + '" y1="' + cy(p) + '" x2="' + cx(i) + '" y2="' + cy(i) +
+           '" stroke="' + (dorada ? '#ffd23f' : 'rgba(140,160,210,.35)') +
+           '" stroke-width="' + (dorada ? 3 : 1.3) + '"/>';
+  }
+  // nodos
+  for (let i = 0; i < limite; i++) {
+    const n = labRes.nodos[i];
+    let relleno = 'rgba(20,28,48,.95)', borde = 'rgba(120,140,190,.5)', ancho = 1.4, texto = 'rgba(190,205,235,.85)';
+    if (expandidosIds.has(i)) {
+      relleno = labColorCalor(total > 1 ? ordenDe[i] / (total - 1) : 0);
+      borde = 'rgba(255,255,255,.35)'; texto = '#fff';
+    }
+    if (enFrontera.has(i)) { borde = '#28e0e0'; ancho = 2.2; }
+    if (enCamino.has(i)) { relleno = '#ffd23f'; borde = '#fff3b0'; ancho = 2.4; texto = '#0b0f1a'; }
+    if (i === actual) { borde = '#ffffff'; ancho = 3.4; }
+
+    svg += '<g>';
+    svg += '<circle cx="' + cx(i) + '" cy="' + cy(i) + '" r="' + R + '" fill="' + relleno + '" stroke="' + borde + '" stroke-width="' + ancho + '"/>';
+    svg += '<text x="' + cx(i) + '" y="' + (cy(i) + 3.5) + '" text-anchor="middle" font-size="9.5" fill="' + texto + '">' + n.r + ',' + n.c + '</text>';
+    const etiqueta = labAlgo === 'astar' ? ('f=' + n.f) : (labAlgo === 'bfs' ? ('g=' + n.g) : ('p=' + n.prof));
+    svg += '<text x="' + cx(i) + '" y="' + (cy(i) + R + 12) + '" text-anchor="middle" font-size="9" fill="rgba(160,178,215,.9)">' + etiqueta + '</text>';
+    svg += '</g>';
+  }
+  svg += '</svg>';
+  caja.innerHTML = svg;
+}
+
+/* =========================================================================
+   ESTADÍSTICAS
+   ========================================================================= */
+function labRenderStats(){
+  const set = (id, v, cls) => {
+    const el = document.getElementById(id);
+    el.textContent = v;
+    el.className = 'v' + (cls ? ' ' + cls : '');
+  };
+  if (!labRes) return;
+  const terminado = labPaso >= labRes.traza.length - 1;
+  const idx = Math.max(0, Math.min(labPaso, labRes.traza.length - 1));
+  const expHasta = labPaso < 0 ? 0 : idx + 1;
+  const fronteraAhora = labPaso < 0 ? 1 : labRes.traza[idx].fronteraDespues.length;
+
+  set('statExp', expHasta + (terminado ? '' : ' …'));
+  set('statFron', fronteraAhora + (terminado ? ' (máx ' + labRes.maxFrontera + ')' : ''));
+
+  if (terminado && labRes.exito) {
+    const opt = LAB_OPTIMOS[labNivel];
+    set('statPasos', labRes.pasos);
+    set('statCosto', labRes.costo);
+    set('statTiempo', labRes.tiempoMs === null ? 'midiendo…' : labFmtTiempo(labRes.tiempoMs));
+    const esOpt = labRes.costo === opt;
+    set('statOptimo', esOpt ? 'SÍ' : 'NO', esOpt ? 'si' : 'no');
+    document.getElementById('statNota').innerHTML = (esOpt
+      ? 'Costo óptimo real del nivel: <b>' + opt + '</b>. Este algoritmo lo alcanzó.'
+      : 'Costo óptimo real del nivel: <b>' + opt + '</b>, y este algoritmo devolvió <b>' + labRes.costo + '</b>: pagó <b>' + (labRes.costo - opt) + '</b> de más.')
+      + (labRes.tiempoMs === null ? '' :
+         '<br>El tiempo sale de <b>' + labRes.lotesMedicion + '</b> lotes de <b>' + labRes.repsMedicion +
+         '</b> corridas cada uno, quedándose con el lote más rápido. Se mide el algoritmo solo, sin la traza de animación.');
+  } else {
+    set('statPasos', '—'); set('statCosto', '—'); set('statTiempo', '—'); set('statOptimo', '—');
+    document.getElementById('statNota').textContent = 'El costo óptimo real se calcula aparte con búsqueda de costo uniforme, para poder decir con honestidad si el algoritmo acertó.';
+  }
+}
+
+/* =========================================================================
+   REDIBUJADO COMPLETO DEL LABORATORIO
+   ========================================================================= */
+function labRender(){
+  labDibujarMapa(LCtx, LAB_MAPAS[labNivel], LAB_CELL, {
+    paso: labPaso,
+    res: labRes,
+    verF: document.getElementById('labVerF').checked,
+    verPadres: document.getElementById('labVerPadres').checked,
+    verFrontera: document.getElementById('labVerFrontera').checked,
+    pacPos: labEjec ? labEjec.pos : null,
+    pacDir: labEjec ? labEjec.dir : 'right',
+    pacBoca: labEjec ? labEjec.boca : true
+  });
+  document.getElementById('labPasoActual').textContent = labPaso < 0 ? 0 : labPaso + 1;
+  document.getElementById('labPasoTotal').textContent = labRes ? labRes.traza.length : 0;
+  labRenderFrontera();
+  labRenderGrafo();
+  labRenderStats();
+}
+
+/* =========================================================================
+   REPRODUCCIÓN PASO A PASO
+   ========================================================================= */
+function labDetener(){
+  if (labTimer) { clearInterval(labTimer); labTimer = null; }
+  document.getElementById('labPlay').textContent = '▶ Buscar';
+}
+function labIrA(paso){
+  if (!labRes) return;
+  labPaso = Math.max(-1, Math.min(paso, labRes.traza.length - 1));
+  labRender();
+}
+function labAvanzar(){
+  if (!labRes) return false;
+  if (labPaso >= labRes.traza.length - 1) return false;
+  labPaso++;
+  const n = labRes.nodos[labRes.traza[labPaso].nodoId];
+  LabAudio.expandir(n.prof);
+  if (labPaso === labRes.traza.length - 1) {
+    if (labRes.exito) LabAudio.encontrado(); else LabAudio.fallo();
+  }
+  labRender();
+  return true;
+}
+function labPlayPausa(){
+  if (labTimer) { labDetener(); return; }
+  if (labPaso >= labRes.traza.length - 1) labPaso = -1;
+  LabAudio.despertar();
+  const v = parseInt(document.getElementById('labVelocidad').value, 10);
+  const ms = Math.round(420 / v);
+  document.getElementById('labPlay').textContent = '⏸ Pausa';
+  labTimer = setInterval(() => { if (!labAvanzar()) labDetener(); }, ms);
+}
+
+/* Pac-Man recorre el camino encontrado, pagando el costo real de cada celda. */
+function labEjecutarCamino(){
+  if (!labRes || !labRes.exito) return;
+  labDetener();
+  labPaso = labRes.traza.length - 1;
+  if (labEjec && labEjec.timer) clearInterval(labEjec.timer);
+  const cam = labRes.camino;
+  labEjec = { i: 0, pos: { r: cam[0].r, c: cam[0].c }, dir: 'right', boca: true, costo: 0, timer: null };
+  const grid = LAB_MAPAS[labNivel].grid;
+  labEjec.timer = setInterval(() => {
+    labEjec.i++;
+    if (labEjec.i >= cam.length) {
+      clearInterval(labEjec.timer);
+      LabAudio.ganador();
+      labEjec = null;
+      labRender();
+      return;
+    }
+    const prev = cam[labEjec.i - 1], act = cam[labEjec.i];
+    labEjec.dir = act.c > prev.c ? 'right' : act.c < prev.c ? 'left' : act.r > prev.r ? 'down' : 'up';
+    labEjec.pos = { r: act.r, c: act.c };
+    labEjec.boca = !labEjec.boca;
+    labEjec.costo += labCosto(grid, act.r, act.c);
+    if (grid[act.r][act.c] === 2) LabAudio.lodo(); else LabAudio.paso();
+    labRender();
+  }, 150);
+}
+
+/* =========================================================================
+   CAMBIO DE NIVEL Y ALGORITMO
+   ========================================================================= */
+/* La medición de tiempo corre varios lotes y tarda ~100 ms. Se hace fuera del
+   camino del dibujado para que cambiar de algoritmo o de nivel siga siendo
+   instantáneo; cuando termina, refresca solo el panel de estadísticas. */
+let labMedirPend = null;
+
+function labProgramarMedicion(){
+  if (labMedirPend) clearTimeout(labMedirPend);
+  const nivelPedido = labNivel, algoPedido = labAlgo;
+  labMedirPend = setTimeout(() => {
+    labMedirPend = null;
+    if (nivelPedido !== labNivel || algoPedido !== labAlgo) return;  // el usuario ya cambió
+    const m = labMedirTiempo(LAB_MAPAS[nivelPedido], algoPedido);
+    if (nivelPedido !== labNivel || algoPedido !== labAlgo) return;
+    labRes.tiempoMs = m.ms;
+    labRes.repsMedicion = m.reps;
+    labRes.lotesMedicion = m.lotes;
+    labRenderStats();
+  }, 40);
+}
+
+function labRecalcular(){
+  labDetener();
+  if (labEjec && labEjec.timer) clearInterval(labEjec.timer);
+  labEjec = null;
+  labRes = labBuscar(LAB_MAPAS[labNivel], labAlgo);   // instantáneo
+  labPaso = -1;
+  labProgramarMedicion();
+  const info = LAB_EXPLICACION[labAlgo];
+  document.getElementById('labComoTitulo').textContent = info.titulo;
+  document.getElementById('labComoTitulo').style.color = info.color;
+  document.getElementById('labComoDecide').innerHTML = info.html;
+  document.getElementById('labNivelDesc').innerHTML =
+    '<b>' + LAB_MAPAS[labNivel].nombre + '</b> — ' + LAB_MAPAS[labNivel].desc +
+    '<br><br>Costo óptimo real de este nivel: <b>' + LAB_OPTIMOS[labNivel] + '</b>.';
+  document.getElementById('labEjecutar').disabled = !labRes.exito;
+  labRender();
+}
+
+function labRenderNiveles(){
+  ['labNiveles', 'labNivelesCarrera'].forEach(cid => {
+    const cont = document.getElementById(cid);
+    cont.innerHTML = LAB_MAPAS.map((m, i) =>
+      '<button type="button" class="nivel-chip' + (i === labNivel ? ' active' : '') + '" data-nivel="' + i + '">' +
+      m.nombre + (m.estrella ? ' <span class="estrella">★</span>' : '') + '</button>'
+    ).join('');
+  });
+}
+
+/* =========================================================================
+   CARRERA — los tres algoritmos a la vez sobre el mismo laberinto
+   ========================================================================= */
+let labCarrera = null;
+
+function labRenderPistas(){
+  const cont = document.getElementById('labPistas');
+  cont.innerHTML = LAB_ALGOS.map(a =>
+    '<div class="pista" id="pista-' + a.key + '">' +
+      '<h4 style="color:' + a.color + '">' + a.etiqueta + ' <span class="marca" id="marca-' + a.key + '">listo</span></h4>' +
+      '<canvas id="canvas-' + a.key + '" width="' + (LAB_COLS * 24) + '" height="' + (LAB_ROWS * 24) + '"></canvas>' +
+      '<div class="barra"><i id="barra-' + a.key + '" style="background:' + a.color + '"></i></div>' +
+      '<div class="cifras"><span id="cif-exp-' + a.key + '">expandidos 0</span><span id="cif-costo-' + a.key + '">costo —</span></div>' +
+    '</div>'
+  ).join('');
+  labDibujarPistas();
+}
+function labDibujarPistas(){
+  LAB_ALGOS.forEach(a => {
+    const cv = document.getElementById('canvas-' + a.key);
+    if (!cv) return;
+    const c = labCarrera ? labCarrera[a.key] : null;
+    labDibujarMapa(cv.getContext('2d'), LAB_MAPAS[labNivel], 24, {
+      paso: c ? c.paso : -1, res: c ? c.res : null,
+      verF: false, verPadres: false, verFrontera: true
+    });
+  });
+}
+
+function labLargar(){
+  if (labCarrera && labCarrera.timer) clearInterval(labCarrera.timer);
+  LabAudio.despertar();
+  LabAudio.largada();
+  labCarrera = { timer: null };
+  LAB_ALGOS.forEach(a => {
+    labCarrera[a.key] = { res: labBuscar(LAB_MAPAS[labNivel], a.key), paso: -1, fin: false };
+    document.getElementById('pista-' + a.key).classList.remove('gana');
+    document.getElementById('marca-' + a.key).textContent = 'buscando…';
+  });
+  document.getElementById('labMarcador').innerHTML = '<p>Corriendo…</p>';
+
+  setTimeout(() => {
+    labCarrera.timer = setInterval(() => {
+      let vivos = 0;
+      LAB_ALGOS.forEach(a => {
+        const c = labCarrera[a.key];
+        if (c.fin) return;
+        c.paso++;
+        if (c.paso >= c.res.traza.length - 1) {
+          c.paso = c.res.traza.length - 1;
+          c.fin = true;
+          document.getElementById('marca-' + a.key).textContent =
+            c.res.exito ? ('llegó · costo ' + c.res.costo) : 'sin solución';
+        } else vivos++;
+        document.getElementById('barra-' + a.key).style.width =
+          ((c.paso + 1) / c.res.traza.length * 100).toFixed(1) + '%';
+        document.getElementById('cif-exp-' + a.key).textContent = 'expandidos ' + (c.paso + 1);
+        document.getElementById('cif-costo-' + a.key).textContent =
+          c.fin && c.res.exito ? 'costo ' + c.res.costo : 'costo —';
+      });
+      labDibujarPistas();
+      if (!vivos) { clearInterval(labCarrera.timer); labCarrera.timer = null; labFinCarrera(); }
+    }, 55);
+  }, 700);
+}
+
+function labFinCarrera(){
+  const opt = LAB_OPTIMOS[labNivel];
+  let mejor = null;
+  LAB_ALGOS.forEach(a => {
+    const r = labCarrera[a.key].res;
+    if (!r.exito) return;
+    if (!mejor || r.costo < mejor.r.costo || (r.costo === mejor.r.costo && r.expandidos < mejor.r.expandidos)) {
+      mejor = { key: a.key, r };
+    }
+  });
+  if (mejor) {
+    document.getElementById('pista-' + mejor.key).classList.add('gana');
+    LabAudio.ganador();
+  }
+  const filas = LAB_ALGOS.map(a => {
+    const r = labCarrera[a.key].res;
+    if (r.tiempoMs === null) r.tiempoMs = labMedirTiempo(LAB_MAPAS[labNivel], a.key).ms;
+    const esOpt = r.exito && r.costo === opt;
+    return '<tr>' +
+      '<td class="algo-' + a.key + '">' + a.etiqueta + '</td>' +
+      '<td>' + r.expandidos + '</td>' +
+      '<td>' + (r.exito ? r.pasos : '—') + '</td>' +
+      '<td>' + (r.exito ? r.costo : '—') + '</td>' +
+      '<td>' + r.tiempoMs.toFixed(4) + '</td>' +
+      '<td class="' + (esOpt ? 'si' : 'no') + '">' + (esOpt ? 'SÍ' : 'NO') + '</td>' +
+      '</tr>';
+  }).join('');
+  document.getElementById('labMarcador').innerHTML =
+    '<table class="comp"><thead><tr><th>Algoritmo</th><th>Nodos expandidos</th><th>Pasos</th><th>Costo</th><th>Tiempo (ms)</th><th>¿Óptimo?</th></tr></thead><tbody>' +
+    filas + '</tbody></table>' +
+    '<p class="comp-nota">Gana el <b>costo más bajo</b>, no el que termina antes de explorar. Costo óptimo real del nivel: <b>' + opt + '</b>.</p>';
+
+  const aviso = document.getElementById('labResultadoApuesta');
+  if (labApuesta && mejor) {
+    const bien = labApuesta === mejor.key;
+    aviso.className = 'resultado-apuesta ' + (bien ? 'bien' : 'mal');
+    aviso.textContent = bien
+      ? '✓ Acertaste: ganó ' + LAB_ALGOS.find(a => a.key === mejor.key).etiqueta
+      : '✗ Apostaste a ' + LAB_ALGOS.find(a => a.key === labApuesta).etiqueta + ' y ganó ' + LAB_ALGOS.find(a => a.key === mejor.key).etiqueta;
+    labApuesta = null;
+  }
+}
+
+/* =========================================================================
+   COMPARATIVA — las tablas del entregable
+   ========================================================================= */
+let labUltimaTabla = '';
+
+function labFilaAlgo(a, r, opt){
+  const esOpt = r.exito && r.costo === opt;
+  return '<tr>' +
+    '<td class="algo-' + a.key + '">' + a.etiqueta + '</td>' +
+    '<td>' + r.expandidos + '</td>' +
+    '<td>' + r.maxFrontera + '</td>' +
+    '<td>' + (r.exito ? r.pasos : '—') + '</td>' +
+    '<td>' + (r.exito ? r.costo : '—') + '</td>' +
+    '<td>' + r.tiempoMs.toFixed(4) + '</td>' +
+    '<td class="' + (esOpt ? 'si' : 'no') + '">' + (esOpt ? 'SÍ' : 'NO') + '</td>' +
+    '</tr>';
+}
+const LAB_CABECERA = '<thead><tr><th>Algoritmo</th><th>Nodos expandidos</th><th>Máx. frontera</th><th>Pasos</th><th>Costo</th><th>Tiempo (ms)</th><th>¿Óptimo?</th></tr></thead>';
+const LAB_NOTA_TIEMPO = '<b>Cómo se mide el tiempo:</b> una sola corrida dura decenas de µs, menos que la resolución del reloj del navegador (' +
+  (LAB_RES_RELOJ * 1000).toFixed(0) + ' µs en este equipo), así que cronometrarla directo daría ruido. En su lugar se calibra cuántas repeticiones entran en un lote de ~' +
+  LAB_MS_LOTE.toFixed(0) + ' ms, se corren <b>' + LAB_LOTES + '</b> lotes y se toma el <b>más rápido</b> — el ruido (recolección de basura, el sistema operativo) solo puede sumar tiempo, nunca restarlo. Se mide el algoritmo solo, sin el registro de la animación.';
+
+function labCorrerTres(){
+  const opt = LAB_OPTIMOS[labNivel];
+  const res = {};
+  LAB_ALGOS.forEach(a => { res[a.key] = labBuscarMedido(LAB_MAPAS[labNivel], a.key); });
+  const filas = LAB_ALGOS.map(a => labFilaAlgo(a, res[a.key], opt)).join('');
+  document.getElementById('labTablaComp').innerHTML =
+    '<table class="comp">' + LAB_CABECERA + '<tbody>' +
+    '<tr class="sep"><td colspan="7">' + LAB_MAPAS[labNivel].nombre + ' · costo óptimo real ' + opt + '</td></tr>' +
+    filas + '</tbody></table>' +
+    '<p class="comp-nota">Un solo nivel. Para la tabla del informe usá <b>Correr los 5 escenarios</b>.<br>' + LAB_NOTA_TIEMPO + '</p>';
+  labUltimaTabla = labTextoTabla([{ nivel: labNivel, res }]);
+  LabAudio.encontrado();
+}
+
+function labCorrerCinco(){
+  const acum = { dfs: [], bfs: [], astar: [] };
+  const porNivel = [];
+  let html = '<table class="comp">' + LAB_CABECERA + '<tbody>';
+  LAB_MAPAS.forEach((m, i) => {
+    const opt = LAB_OPTIMOS[i];
+    html += '<tr class="sep"><td colspan="7">' + m.nombre + ' · costo óptimo real ' + opt + '</td></tr>';
+    const res = {};
+    LAB_ALGOS.forEach(a => {
+      const r = labBuscarMedido(m, a.key);
+      res[a.key] = r;
+      acum[a.key].push({ r, opt });
+      html += labFilaAlgo(a, r, opt);
+    });
+    porNivel.push({ nivel: i, res });
+  });
+  html += '<tr class="sep"><td colspan="7">PROMEDIO DE LOS 5 ESCENARIOS — esta es la tabla del entregable</td></tr>';
+  LAB_ALGOS.forEach(a => {
+    const xs = acum[a.key];
+    const prom = f => (xs.reduce((s, x) => s + f(x), 0) / xs.length);
+    const optimos = xs.filter(x => x.r.exito && x.r.costo === x.opt).length;
+    html += '<tr>' +
+      '<td class="algo-' + a.key + '">' + a.etiqueta + '</td>' +
+      '<td>' + prom(x => x.r.expandidos).toFixed(1) + '</td>' +
+      '<td>' + prom(x => x.r.maxFrontera).toFixed(1) + '</td>' +
+      '<td>' + prom(x => x.r.pasos).toFixed(1) + '</td>' +
+      '<td>' + prom(x => x.r.costo).toFixed(1) + '</td>' +
+      '<td>' + prom(x => x.r.tiempoMs).toFixed(4) + '</td>' +
+      '<td class="' + (optimos === xs.length ? 'si' : 'no') + '">' + Math.round(optimos / xs.length * 100) + '%</td>' +
+      '</tr>';
+  });
+  html += '</tbody></table>';
+  html += '<p class="comp-nota">n = 5 escenarios · la columna <b>¿Óptimo?</b> del promedio es el <b>porcentaje de escenarios</b> en que el algoritmo alcanzó el costo mínimo real, calculado con búsqueda de costo uniforme.<br>' + LAB_NOTA_TIEMPO + '</p>';
+  document.getElementById('labTablaComp').innerHTML = html;
+  labUltimaTabla = labTextoTabla(porNivel);
+  LabAudio.encontrado();
+}
+
+/* Texto plano de la tabla, para pegar en el informe. */
+function labTextoTabla(datos){
+  let out = 'PAC-LAB · Comparativa DFS / BFS / A*\n';
+  const acum = { dfs: [], bfs: [], astar: [] };
+  datos.forEach(({ nivel, res }) => {
+    const opt = LAB_OPTIMOS[nivel];
+    out += '\n' + LAB_MAPAS[nivel].nombre + '  (costo optimo real: ' + opt + ')\n';
+    out += 'Algoritmo\tExpandidos\tMaxFrontera\tPasos\tCosto\tTiempo(ms)\tOptimo\n';
+    LAB_ALGOS.forEach(a => {
+      const r = res[a.key];              // ya medido, no se vuelve a medir
+      acum[a.key].push({ r, opt });
+      out += a.etiqueta + '\t' + r.expandidos + '\t' + r.maxFrontera + '\t' + r.pasos + '\t' +
+             r.costo + '\t' + r.tiempoMs.toFixed(4) + '\t' + (r.costo === opt ? 'SI' : 'NO') + '\n';
+    });
+  });
+  if (datos.length > 1) {
+    out += '\nPROMEDIO DE LOS ' + datos.length + ' ESCENARIOS\n';
+    out += 'Algoritmo\tExpandidos\tCosto\tTiempo(ms)\t%Optimo\n';
+    LAB_ALGOS.forEach(a => {
+      const xs = acum[a.key];
+      const prom = f => (xs.reduce((s, x) => s + f(x), 0) / xs.length);
+      const optimos = xs.filter(x => x.r.costo === x.opt).length;
+      out += a.etiqueta + '\t' + prom(x => x.r.expandidos).toFixed(1) + '\t' +
+             prom(x => x.r.costo).toFixed(1) + '\t' + prom(x => x.r.tiempoMs).toFixed(4) + '\t' +
+             Math.round(optimos / xs.length * 100) + '%\n';
+    });
+  }
+  out += '\nTiempo: se calibran las repeticiones que entran en un lote de ~' + LAB_MS_LOTE.toFixed(0) +
+         ' ms, se corren ' + LAB_LOTES + ' lotes y se toma el mas rapido.\n' +
+         'Se mide el algoritmo solo, sin la traza de animacion. Resolucion del reloj en este equipo: ' +
+         (LAB_RES_RELOJ * 1000).toFixed(0) + ' us.\n';
+  return out;
+}
+
+/* =========================================================================
+   CABLEADO DE LA INTERFAZ
+   ========================================================================= */
+function labAbrir(){
+  document.getElementById('labScreen').hidden = false;
+  document.body.style.overflow = 'hidden';
+  if (state.gameState === 'playing') {
+    state.gameState = 'paused';
+    document.getElementById('btnPause').textContent = 'Reanudar';
+  }
+  LabAudio.despertar();
+  LabAudio.abrir();
+  labRenderNiveles();
+  labRenderPistas();
+  labRecalcular();
+}
+function labCerrar(){
+  labDetener();
+  if (labEjec && labEjec.timer) clearInterval(labEjec.timer);
+  labEjec = null;
+  if (labCarrera && labCarrera.timer) { clearInterval(labCarrera.timer); labCarrera.timer = null; }
+  document.getElementById('labScreen').hidden = true;
+  document.body.style.overflow = '';
+}
+
+document.getElementById('btnLab').addEventListener('click', labAbrir);
+document.getElementById('labVolver').addEventListener('click', labCerrar);
+
+document.getElementById('labSonido').addEventListener('click', e => {
+  LabAudio.despertar();
+  const on = LabAudio.alternar();
+  e.currentTarget.textContent = on ? '🔊 Sonido' : '🔇 Silencio';
+});
+(function(){
+  const b = document.getElementById('labSonido');
+  b.textContent = LabAudio.activo() ? '🔊 Sonido' : '🔇 Silencio';
+})();
+
+document.getElementById('labTabs').addEventListener('click', e => {
+  const btn = e.target.closest('.lab-tab');
+  if (!btn) return;
+  document.querySelectorAll('.lab-tab').forEach(b => b.classList.toggle('active', b === btn));
+  document.querySelectorAll('.lab-panel').forEach(p => { p.hidden = p.dataset.labpanel !== btn.dataset.labtab; });
+  if (btn.dataset.labtab === 'carrera') labDibujarPistas();
+});
+
+document.querySelectorAll('input[name="labAlgo"]').forEach(radio => {
+  radio.addEventListener('change', e => { labAlgo = e.target.value; labRecalcular(); });
+});
+
+['labNiveles', 'labNivelesCarrera'].forEach(cid => {
+  document.getElementById(cid).addEventListener('click', e => {
+    const btn = e.target.closest('.nivel-chip');
+    if (!btn) return;
+    labNivel = parseInt(btn.dataset.nivel, 10);
+    labRenderNiveles();
+    labRecalcular();
+    if (labCarrera && labCarrera.timer) { clearInterval(labCarrera.timer); labCarrera.timer = null; }
+    labCarrera = null;
+    LAB_ALGOS.forEach(a => {
+      const p = document.getElementById('pista-' + a.key);
+      if (p) p.classList.remove('gana');
+      const m = document.getElementById('marca-' + a.key);
+      if (m) m.textContent = 'listo';
+      const b = document.getElementById('barra-' + a.key);
+      if (b) b.style.width = '0%';
+    });
+    labDibujarPistas();
+  });
+});
+
+document.getElementById('labPlay').addEventListener('click', labPlayPausa);
+document.getElementById('labAdelante').addEventListener('click', () => { labDetener(); labAvanzar(); });
+document.getElementById('labAtras').addEventListener('click', () => { labDetener(); labIrA(labPaso - 1); });
+document.getElementById('labInicio').addEventListener('click', () => { labDetener(); labIrA(-1); });
+document.getElementById('labFin').addEventListener('click', () => {
+  labDetener();
+  labIrA(labRes.traza.length - 1);
+  if (labRes.exito) LabAudio.encontrado(); else LabAudio.fallo();
+});
+document.getElementById('labEjecutar').addEventListener('click', labEjecutarCamino);
+['labVerF', 'labVerPadres', 'labVerFrontera'].forEach(id => {
+  document.getElementById(id).addEventListener('change', labRender);
+});
+document.getElementById('labVelocidad').addEventListener('input', () => {
+  if (labTimer) { labDetener(); labPlayPausa(); }
+});
+
+document.getElementById('apuestaDfs').addEventListener('click', () => labSetApuesta('dfs'));
+document.getElementById('apuestaBfs').addEventListener('click', () => labSetApuesta('bfs'));
+document.getElementById('apuestaAstar').addEventListener('click', () => labSetApuesta('astar'));
+function labSetApuesta(k){
+  labApuesta = k;
+  const aviso = document.getElementById('labResultadoApuesta');
+  aviso.className = 'resultado-apuesta';
+  aviso.textContent = 'Apostado a ' + LAB_ALGOS.find(a => a.key === k).etiqueta + ' · dale a ¡Largar!';
+  LabAudio.despertar();
+  LabAudio.paso();
+}
+document.getElementById('labLargar').addEventListener('click', labLargar);
+
+/* Medir en serio lleva ~100 ms por celda, así que el botón avisa que está
+   trabajando y deja pintar la pantalla antes de arrancar. */
+function labConEspera(btnId, fn){
+  const btn = document.getElementById(btnId);
+  const txt = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Midiendo…';
+  setTimeout(() => {
+    try { fn(); } finally { btn.disabled = false; btn.textContent = txt; }
+  }, 30);
+}
+document.getElementById('labCorrer3').addEventListener('click', () => labConEspera('labCorrer3', labCorrerTres));
+document.getElementById('labCorrer5').addEventListener('click', () => labConEspera('labCorrer5', labCorrerCinco));
+document.getElementById('labCopiar').addEventListener('click', () => {
+  const aviso = document.getElementById('labCopiarAviso');
+  if (!labUltimaTabla) { aviso.textContent = 'Primero corré una comparación.'; return; }
+  const ok = () => { aviso.textContent = '✓ Copiado, pegalo en el informe.'; setTimeout(() => aviso.textContent = '', 3000); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(labUltimaTabla).then(ok).catch(() => labCopiarFallback(labUltimaTabla, ok));
+  } else labCopiarFallback(labUltimaTabla, ok);
+});
+function labCopiarFallback(texto, ok){
+  const ta = document.createElement('textarea');
+  ta.value = texto;
+  ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); ok(); } catch(e){}
+  document.body.removeChild(ta);
+}
+
+// Atajos de teclado dentro del laboratorio
+window.addEventListener('keydown', e => {
+  if (document.getElementById('labScreen').hidden) return;
+  if (e.key === 'Escape') { labCerrar(); return; }
+  if (e.key === 'ArrowRight') { e.preventDefault(); labDetener(); labAvanzar(); }
+  if (e.key === 'ArrowLeft')  { e.preventDefault(); labDetener(); labIrA(labPaso - 1); }
+  if (e.key === ' ')          { e.preventDefault(); labPlayPausa(); }
+}, true);
+
+</script>
+</body>
+</html>
